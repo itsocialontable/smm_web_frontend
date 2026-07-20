@@ -11631,7 +11631,26 @@ interface ConnectedChannel {
   username?: string;
   name?: string;
   status?: string;
+  [key: string]: unknown; // backend kabhi kabhi alag field names bhejta hai (pageName, title, etc.)
 }
+
+// Connected channel/Page ka display naam nikalta hai — backend har jagah
+// same field name (`name`) use nahi karta, isliye kai possible fields
+// check karte hain taaki asli Page ka naam mile, generic "Facebook" nahi.
+const getChannelName = (ch: ConnectedChannel): string | undefined => {
+  const c = ch as Record<string, unknown>;
+  const val =
+    c.accountName ?? c.name ?? c.username ?? c.pageName ?? c.page_name ??
+    c.account_name ?? c.displayName ?? c.display_name ??
+    c.title ?? (c.page as { name?: string } | undefined)?.name;
+  return typeof val === "string" && val.trim() ? val.trim() : undefined;
+};
+
+const getChannelAvatar = (ch: ConnectedChannel): string | undefined => {
+  const c = ch as Record<string, unknown>;
+  const val = c.profileImage ?? c.avatar ?? c.profile_image ?? c.picture;
+  return typeof val === "string" && val.trim() ? val.trim() : undefined;
+};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PLATFORMS = [
@@ -11734,6 +11753,9 @@ const SMMDashboard = () => {
   // Clients with their channels (for Channels view)
   const [clientsWithChannels, setClientsWithChannels]   = useState<ClientWithChannels[]>([]);
   const [clientChannelsLoading, setClientChannelsLoading] = useState(false);
+  // Channels tab me kis client ke kis platform group (e.g. Facebook) ki
+  // Pages list expand ki hui hai — key = `${clientId}_${platformId}`.
+  const [expandedChannelGroup, setExpandedChannelGroup] = useState<string | null>(null);
 
   const [designProjects, setDesignProjects]   = useState<DesignProject[]>([]);
   const [designLoading,  setDesignLoading]    = useState(false);
@@ -13004,7 +13026,7 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                           // us platform ka sirf EK button dikhe — YouTube jaisa.
                           const grouped: Record<string, ConnectedChannel[]> = {};
                           clientConnectedChannels.forEach(ch => {
-                            const p = ch.platform?.toLowerCase() ?? "unknown";
+                            const p = (ch.platform ?? "unknown").toLowerCase().trim();
                             (grouped[p] ??= []).push(ch);
                           });
 
@@ -13023,9 +13045,9 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                                   className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition ${isSelected?"bg-green-600 text-white border-green-600":"smm-btn-outline"}`}>
                                   <span>{platInfo?.icon??"🔗"}</span>
                                   <span className="capitalize">{platInfo?.label??ch.platform}</span>
-                                  {(ch.username||ch.name)&&(
+                                  {getChannelName(ch)&&(
                                     <span className={`text-xs ${isSelected?"text-white/80":"smm-text-muted"}`}>
-                                      @{ch.username??ch.name}
+                                      @{getChannelName(ch)}
                                     </span>
                                   )}
                                 </button>
@@ -13038,34 +13060,37 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                             const selectedChannel = chs.find(
                               ch => String(ch._id??ch.id??platId) === selectedChannelId
                             );
+                            // Jab tak user ne khud koi Page choose nahi ki, button pe
+                            // "Facebook" jaisa generic word nahi — balki pehli/main
+                            // connected Page ka asli naam dikhega (default).
+                            const displayChannel = selectedChannel ?? chs[0];
+                            const displayIndex = chs.indexOf(displayChannel) + 1;
+                            const displayName = getChannelName(displayChannel) ?? `${platInfo?.label??platId} Page ${displayIndex}`;
                             const isOpen = openPlatformDropdown === platId;
                             return (
                               <div key={platId} className="relative">
                                 <button type="button"
                                   onClick={()=>setOpenPlatformDropdown(isOpen?null:platId)}
+                                  title={platInfo?.label??platId}
                                   className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition ${isPlatformSelected?"bg-green-600 text-white border-green-600":"smm-btn-outline"}`}>
                                   <span>{platInfo?.icon??"🔗"}</span>
-                                  <span className="capitalize">{platInfo?.label??platId}</span>
-                                  {selectedChannel&&(
-                                    <span className={`text-xs ${isPlatformSelected?"text-white/80":"smm-text-muted"}`}>
-                                      @{selectedChannel.username??selectedChannel.name}
-                                    </span>
-                                  )}
-                                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen?"rotate-180":""}`}/>
+                                  <span className="max-w-[10rem] truncate">{displayName}</span>
+                                  <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${isOpen?"rotate-180":""}`}/>
                                 </button>
                                 {isOpen && (
                                   <div className="absolute z-20 mt-1 min-w-[14rem] rounded-lg border smm-card shadow-lg py-1 max-h-64 overflow-y-auto">
                                     <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide smm-text-muted">
                                       Select {platInfo?.label??platId} Page
                                     </p>
-                                    {chs.map(ch=>{
+                                    {chs.map((ch,idx)=>{
                                       const channelId = String(ch._id??ch.id??platId);
                                       const isSel = isPlatformSelected && composeChannelIds[platId] === channelId;
+                                      const label = getChannelName(ch) ?? `${platInfo?.label??platId} Page ${idx+1}`;
                                       return (
                                         <button key={channelId} type="button"
                                           onClick={()=>{ selectChannel(platId, channelId); setOpenPlatformDropdown(null); }}
                                           className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left transition hover:bg-green-50 dark:hover:bg-green-900/20 ${isSel?"bg-green-50 dark:bg-green-900/20 font-semibold text-green-700 dark:text-green-400":"smm-text-primary"}`}>
-                                          <span className="truncate">{ch.name??ch.username??"Page"}</span>
+                                          <span className="truncate">{label}</span>
                                           {isSel && <CheckCircle2 className="w-4 h-4 shrink-0"/>}
                                         </button>
                                       );
@@ -13457,30 +13482,90 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                           <div className="mb-4">
                             <p className="text-xs font-semibold smm-text-muted mb-2 uppercase tracking-wide">Connected Accounts</p>
                             <div className="space-y-2">
-                              {(client as ClientWithChannels).channels.map(ch=>{
-                                const chId = ch._id??ch.id??"";
-                                const platInfo = CONNECTABLE_PLATFORMS.find(p=>p.id===ch.platform?.toLowerCase());
-                                return(
-                                  <div key={chId} className="flex items-center justify-between gap-3 p-2.5 rounded-lg border smm-border bg-slate-50/50 dark:bg-slate-800/30">
-                                    <div className="flex items-center gap-2">
-                                      <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm bg-gradient-to-br ${platInfo?.color??"from-slate-400 to-slate-500"}`}>
-                                        {platInfo?.icon??"🔗"}
-                                      </span>
-                                      <div>
-                                        <div className="text-xs font-medium smm-text-primary capitalize">{platInfo?.label??ch.platform}</div>
-                                        {(ch.username||ch.name)&&<div className="text-[10px] smm-text-muted">@{ch.username??ch.name}</div>}
+                              {(() => {
+                                // Same platform ke saare connected Pages (e.g. 22 Facebook
+                                // Pages) ko ek group me le aate hain — list me sirf EK row
+                                // us platform ke liye dikhega ("Facebook — 22 Pages"),
+                                // expand karne pe individual Pages disconnect kar sakte ho.
+                                const grouped: Record<string, ConnectedChannel[]> = {};
+                                (client as ClientWithChannels).channels.forEach(ch => {
+                                  const p = (ch.platform ?? "unknown").toLowerCase().trim();
+                                  (grouped[p] ??= []).push(ch);
+                                });
+
+                                return Object.entries(grouped).map(([platId, chs]) => {
+                                  const platInfo = CONNECTABLE_PLATFORMS.find(p=>p.id===platId);
+                                  const groupKey = `${client.id}_${platId}`;
+                                  const isExpanded = expandedChannelGroup === groupKey;
+
+                                  // ── Sirf ek connected account: seedha row, koi expand nahi ──
+                                  if (chs.length === 1) {
+                                    const ch = chs[0];
+                                    const chId = ch._id??ch.id??"";
+                                    const label = getChannelName(ch) ?? platInfo?.label ?? ch.platform;
+                                    return (
+                                      <div key={platId} className="flex items-center justify-between gap-3 p-2.5 rounded-lg border smm-border bg-slate-50/50 dark:bg-slate-800/30">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <span className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-sm bg-gradient-to-br ${platInfo?.color??"from-slate-400 to-slate-500"}`}>
+                                            {platInfo?.icon??"🔗"}
+                                          </span>
+                                          <div className="min-w-0">
+                                            <div className="text-xs font-medium smm-text-primary truncate">{label}</div>
+                                            <div className="text-[10px] smm-text-muted capitalize">{platInfo?.label??ch.platform}</div>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                          <span className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 px-1.5 py-0.5 rounded-full font-medium">✓ Connected</span>
+                                          <button
+                                            onClick={()=>handleDisconnectClientChannel(chId, client.id)}
+                                            className="text-[10px] text-red-500 hover:underline px-1"
+                                          >Disconnect</button>
+                                        </div>
                                       </div>
+                                    );
+                                  }
+
+                                  // ── Multiple connected Pages: ek summary row, expand pe list ──
+                                  return (
+                                    <div key={platId} className="rounded-lg border smm-border bg-slate-50/50 dark:bg-slate-800/30 overflow-hidden">
+                                      <button type="button"
+                                        onClick={()=>setExpandedChannelGroup(isExpanded?null:groupKey)}
+                                        className="w-full flex items-center justify-between gap-3 p-2.5">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <span className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-sm bg-gradient-to-br ${platInfo?.color??"from-slate-400 to-slate-500"}`}>
+                                            {platInfo?.icon??"🔗"}
+                                          </span>
+                                          <div className="min-w-0 text-left">
+                                            <div className="text-xs font-medium smm-text-primary">{platInfo?.label??platId}</div>
+                                            <div className="text-[10px] smm-text-muted">{chs.length} Pages connected</div>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                          <span className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 px-1.5 py-0.5 rounded-full font-medium">✓ Connected</span>
+                                          <ChevronDown className={`w-3.5 h-3.5 smm-text-muted transition-transform ${isExpanded?"rotate-180":""}`}/>
+                                        </div>
+                                      </button>
+                                      {isExpanded && (
+                                        <div className="border-t smm-border divide-y smm-border">
+                                          {chs.map((ch,idx)=>{
+                                            const chId = ch._id??ch.id??"";
+                                            const label = getChannelName(ch) ?? `${platInfo?.label??platId} Page ${idx+1}`;
+                                            return (
+                                              <div key={chId} className="flex items-center justify-between gap-3 px-2.5 py-2 pl-11">
+                                                <span className="text-xs smm-text-primary truncate">{label}</span>
+                                                <button
+                                                  onClick={()=>handleDisconnectClientChannel(chId, client.id)}
+                                                  className="text-[10px] text-red-500 hover:underline px-1 shrink-0"
+                                                >Disconnect</button>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 px-1.5 py-0.5 rounded-full font-medium">✓ Connected</span>
-                                      <button
-                                        onClick={()=>handleDisconnectClientChannel(chId, client.id)}
-                                        className="text-[10px] text-red-500 hover:underline px-1"
-                                      >Disconnect</button>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                });
+                              })()}
                             </div>
                           </div>
                         )}
