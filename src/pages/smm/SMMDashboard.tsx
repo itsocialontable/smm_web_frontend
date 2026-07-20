@@ -12343,6 +12343,8 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
   const key = `${clientId}_${platId}`;
   setConnectingForClient(key);
   // ✅ FIX: clientId pass karo — backend pe SMM ke liye MANDATORY hai
+  // ⚠️ Backend ki API se hi authUrl lo — kabhi khud se kisi platform ka
+  // OAuth URL (facebook.com/dialog/oauth?... jaisa) construct mat karna.
   const { data, error } = await apiGetOAuthUrl(token, platId, clientId);
   if (error) { toast.error("OAuth failed: " + error); setConnectingForClient(null); return; }
   const url = (data as any)?.authUrl ?? (data as any)?.url ?? (data as any)?.redirectUrl;

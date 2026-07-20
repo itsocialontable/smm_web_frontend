@@ -288,6 +288,13 @@ export const apiSocialConnect = (
 
 // ✅ FIX: clientId ab query param mein pass hota hai
 // Backend pe SMM ke liye clientId MANDATORY hai — bina iske 400 error aata tha
+// ⚠️ RULE (backend ke kehne pe): kisi bhi platform (Facebook/Instagram/
+// Pinterest/LinkedIn/Threads/YouTube) ka OAuth URL KABHI khud se
+// construct mat karo (jaise "facebook.com/dialog/oauth?client_id=...").
+// Hamesha yahi function call karo — jo backend se already-correct
+// redirect_uri ke saath bana hua authUrl leke aata hai. Response ke
+// `authUrl` (ya `url`/`redirectUrl`) ko seedha window.location.href
+// mein daalo, usme kuch add/edit mat karo.
 export const apiGetOAuthUrl = (token: string, platform: string, clientId?: string) =>
   authRequest<{ authUrl?: string; url?: string; redirectUrl?: string }>(
     `/api/social/auth/${platform}${clientId ? `?clientId=${clientId}` : ""}`,

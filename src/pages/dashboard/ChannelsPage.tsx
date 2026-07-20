@@ -123,6 +123,8 @@ const handleSelectPlatform = async (platform: string) => {
   // platform detect nahi ho pata tha.
   localStorage.setItem("oauth_platform", platform);
 
+  // ⚠️ Backend ki API se hi authUrl lo — khud se kisi platform ka OAuth
+  // URL kabhi construct mat karna (backend ka clear instruction hai).
   // GET /api/social/auth/:platform — token Authorization header mein jayega
   const { data, error } = await apiGetOAuthUrl(freshToken, platform);
 
