@@ -316,8 +316,20 @@ export interface ChannelsRes {
   [key: string]: unknown;
 }
 
-export const apiGetChannels = (token: string) =>
-  authRequest<ChannelsRes>("/api/social/accounts", "GET", token);
+export const apiGetChannels = (
+  token: string,
+  opts?: { clientId?: string; platform?: string }
+) => {
+  const params = new URLSearchParams();
+  if (opts?.clientId) params.set("clientId", opts.clientId);
+  if (opts?.platform) params.set("platform", opts.platform);
+  const qs = params.toString();
+  return authRequest<ChannelsRes>(
+    `/api/social/accounts${qs ? `?${qs}` : ""}`,
+    "GET",
+    token
+  );
+};
 
 export const apiDisconnectChannel = (token: string, channelId: string) =>
   authRequest<{ success?: boolean; message?: string }>(
@@ -436,6 +448,11 @@ export const apiGetPosts = (token: string, status?: string) => {
 //   return authRequestFormData<CreatePostRes>("/api/posts/create", token, fd);
 // };
 
+export interface PlatformAccount {
+  platform: string;
+  accountId: string;
+}
+
 export const apiCreatePost = (
   token: string,
   content: string,
@@ -445,8 +462,11 @@ export const apiCreatePost = (
   scheduleAt: string | null,
   youtubeTitle?:   string,
   youtubePrivacy?: string,
-  clientId?: string,        // ✅ ADD: SMM ke liye mandatory
-  facebookPageId?: string   // ✅ ADD: kis FB Page pe post karna hai
+  clientId?: string,                    // ✅ SMM ke liye mandatory
+  platformAccounts?: PlatformAccount[]   // ✅ ADD: backend-confirmed field —
+                                          // batata hai kis platform ke kis
+                                          // specific account/page pe post
+                                          // jaani hai, e.g. Facebook Page.
 ) => {
   const fd = new FormData();
   fd.append("content", content);
@@ -465,13 +485,11 @@ export const apiCreatePost = (
   if (scheduleAt)     fd.append("scheduleAt",     scheduleAt);
   if (youtubeTitle)   fd.append("youtubeTitle",   youtubeTitle);
   if (youtubePrivacy) fd.append("youtubePrivacy", youtubePrivacy);
-  if (clientId)       fd.append("clientId",       clientId);   // ✅ ADD
-  if (facebookPageId) {
-    // Backend field ka exact naam confirm nahi hai isliye dono common
-    // names bhej rahe hain — jo bhi backend expect kare match ho jaayega.
-    // Backend confirm hone ke baad dusri line hata dena.
-    fd.append("facebookPageId", facebookPageId);
-    fd.append("pageId",         facebookPageId);
+  if (clientId)       fd.append("clientId",       clientId);
+  if (platformAccounts && platformAccounts.length > 0) {
+    // multipart/form-data mein array/object seedha nahi jaata — backend ke
+    // kehne pe JSON.stringify() karke string ke roop mein bhej rahe hain.
+    fd.append("platformAccounts", JSON.stringify(platformAccounts));
   }
 
   return authRequestFormData<CreatePostRes>("/api/posts/create", token, fd);
@@ -484,7 +502,7 @@ export const apiSaveDraft = (
   platforms: string[],
   tags: string[],
   mediaFiles: (File | string)[],
-  facebookPageId?: string   // ✅ ADD: kis FB Page pe draft banega
+  platformAccounts?: PlatformAccount[]   // ✅ ADD: draft ke liye bhi same field
 ) => {
   const fd = new FormData();
   fd.append("content", content);
@@ -500,9 +518,8 @@ export const apiSaveDraft = (
     }
   });
 
-  if (facebookPageId) {
-    fd.append("facebookPageId", facebookPageId);
-    fd.append("pageId",         facebookPageId);
+  if (platformAccounts && platformAccounts.length > 0) {
+    fd.append("platformAccounts", JSON.stringify(platformAccounts));
   }
 
   return authRequestFormData<CreatePostRes>("/api/posts/draft", token, fd);

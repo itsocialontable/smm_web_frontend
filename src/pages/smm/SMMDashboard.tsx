@@ -11783,6 +11783,10 @@ const SMMDashboard = () => {
   const [clientConnectedChannels, setClientConnectedChannels] = useState<ConnectedChannel[]>([]);
   const [clientChannelsFetching, setClientChannelsFetching]   = useState(false);
   const [composePlatforms, setComposePlatforms] = useState<string[]>([]);
+  // Kis platform pe kaunsa specific account/page select kiya gaya hai
+  // (e.g. Facebook ke case mein multiple Pages ho sakti hain, ye batayega
+  // konsi Page pe post jaani hai). Key = platform id, Value = channel/account id.
+  const [composeChannelIds, setComposeChannelIds] = useState<Record<string, string>>({});
   const [composeScheduleDate, setComposeScheduleDate] = useState("");
   const [composeScheduleTime, setComposeScheduleTime] = useState("");
   const [composeSaving, setComposeSaving]     = useState(false);
@@ -12010,6 +12014,7 @@ const fetchClientChannels = async (clientId: string) => {
     setClientConnectedChannels([]);
   }
   setComposePlatforms([]);
+  setComposeChannelIds({});
   setClientChannelsFetching(false);
 };
 
@@ -12196,6 +12201,28 @@ const loadClientsWithChannels = async () => {
 
   const togglePlat = (id:string) => setComposePlatforms(p => p.includes(id)?p.filter(x=>x!==id):[...p,id]);
 
+  // Jab client ke paas ek platform ki multiple connected accounts/Pages hon
+  // (e.g. 2 Facebook Pages), is function se specific account select hota hai.
+  // Dobara usi account pe click karne se deselect ho jaata hai; kisi doosre
+  // account pe click karne se selection replace ho jaati hai (platform tab
+  // bhi selected hi rehta hai, sirf account badalta hai).
+  const selectChannel = (platId: string, channelId: string) => {
+    const isSameChannelSelected =
+      composePlatforms.includes(platId) && composeChannelIds[platId] === channelId;
+
+    if (isSameChannelSelected) {
+      setComposePlatforms(p => p.filter(x => x !== platId));
+      setComposeChannelIds(prev => {
+        const next = { ...prev };
+        delete next[platId];
+        return next;
+      });
+    } else {
+      setComposePlatforms(p => (p.includes(platId) ? p : [...p, platId]));
+      setComposeChannelIds(prev => ({ ...prev, [platId]: channelId }));
+    }
+  };
+
   const handleCompose = async (action:"draft"|"queue"|"schedule") => {
     if (!composeContent.trim()) { toast.error("Please add some content"); return; }
     if (action!=="draft"&&composePlatforms.length===0) { toast.error("Please select at least one platform"); return; }
@@ -12233,12 +12260,20 @@ const loadClientsWithChannels = async () => {
         //   youtubePrivacy || undefined
         // );
         // ✅ NAYA — clientId add karo end mein
+        // ✅ NAYA — platformAccounts: backend ko batao kis platform ke kis
+        // specific account/Page pe post jaani hai (e.g. Facebook Page).
+        // composeChannelIds mein sirf wahi platforms honge jinke liye user
+        // ne explicitly ek account/channel select kiya ho.
+        const platformAccounts = composePlatforms
+          .filter(p => composeChannelIds[p])
+          .map(p => ({ platform: p, accountId: composeChannelIds[p] }));
 const {error} = await apiCreatePost(
   token, composeContent, composePlatforms, composeTags,
   composeMedia?[composeMedia]:[], schedAt??null,
   youtubeTitle || undefined,
   youtubePrivacy || undefined,
-  composeClientId || undefined   // ✅ ADD
+  composeClientId || undefined,   // ✅ ADD
+  platformAccounts.length > 0 ? platformAccounts : undefined  // ✅ ADD
 );
         if(error){toast.error("Post failed: "+error);return;}
         const isScheduled = !!schedAt;
@@ -12260,6 +12295,7 @@ const {error} = await apiCreatePost(
     setComposeMedia(null); setComposePreview(null);
     setEditingDraft(null); setComposeTags([]); setComposeTagInput("");
     setComposeClientId(""); setClientConnectedChannels([]);
+    setComposeChannelIds({});
     setYoutubeTitle(""); setYoutubePrivacy("public"); setIsVideoFile(false);
   };
 
@@ -12945,11 +12981,16 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                         {clientConnectedChannels.map(ch=>{
                           const platId = ch.platform?.toLowerCase();
                           const platInfo = CONNECTABLE_PLATFORMS.find(p=>p.id===platId);
-                          const channelId = ch._id??ch.id??platId;
-                          const isSelected = composePlatforms.includes(platId);
+                          const channelId = String(ch._id??ch.id??platId);
+                          // Agar is platform ki multiple connected accounts hain
+                          // (e.g. 2 Facebook Pages), to sirf wahi button "selected"
+                          // dikhna chahiye jiska channelId compose me chuna gaya ho.
+                          const isSelected =
+                            composePlatforms.includes(platId) &&
+                            composeChannelIds[platId] === channelId;
                           return(
                             <button key={channelId} type="button"
-                              onClick={()=>togglePlat(platId)}
+                              onClick={()=>selectChannel(platId, channelId)}
                               className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition ${isSelected?"bg-green-600 text-white border-green-600":"smm-btn-outline"}`}>
                               <span>{platInfo?.icon??"🔗"}</span>
                               <span className="capitalize">{platInfo?.label??ch.platform}</span>
@@ -12965,6 +13006,21 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                       <p className="text-xs smm-text-muted">
                         {composePlatforms.length} platform{composePlatforms.length!==1?"s":""} selected
                       </p>
+                      {(() => {
+                        const platformCounts: Record<string, number> = {};
+                        clientConnectedChannels.forEach(ch => {
+                          const p = ch.platform?.toLowerCase();
+                          platformCounts[p] = (platformCounts[p] ?? 0) + 1;
+                        });
+                        const multi = Object.entries(platformCounts).filter(([, n]) => n > 1);
+                        if (multi.length === 0) return null;
+                        return (
+                          <p className="text-xs text-blue-600">
+                            ℹ️ {multi.map(([p]) => p).join(", ")} ke liye multiple accounts connected
+                            hain — jis button pe click karoge sirf usi Page/account pe post jaayegi.
+                          </p>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
