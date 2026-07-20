@@ -12313,8 +12313,12 @@ const loadClientsWithChannels = async () => {
         //   youtubePrivacy || undefined
         // );
         // ✅ NAYA — clientId add karo end mein
-        // ✅ NAYA — platformAccounts: backend ko batao kis platform ke kis
-        // specific account/Page pe post jaani hai (e.g. Facebook Page).
+        // ✅ Backend developer ne exactly ye shape maanga hai:
+        //     platformAccounts: [{ platform: "facebook", accountId: selectedAccount.accountId }]
+        // composeChannelIds[p] ab har platform ke liye us Page ka asli
+        // `accountId` store karta hai (Mongo _id nahi) — kyunki dropdown se
+        // Page select karte waqt getChannelId() accountId ko hi priority
+        // deta hai. Isliye neeche wahi exact shape bin rahi hai.
         // composeChannelIds mein sirf wahi platforms honge jinke liye user
         // ne explicitly ek account/channel select kiya ho.
         const platformAccounts = composePlatforms
