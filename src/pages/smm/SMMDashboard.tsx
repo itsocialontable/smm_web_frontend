@@ -11561,7 +11561,7 @@ import {
   Eye, Heart, TrendingUp, Users, Clock, Inbox,
   FileText, Globe, Trash2, Edit2, RefreshCw,
   LinkIcon, Palette, MessageSquare,
-  Bell, BellOff, Moon, Sun,
+  Bell, BellOff, Moon, Sun, ChevronDown,
 } from "lucide-react";
 import {
   clearSession, getSession,
@@ -11787,6 +11787,24 @@ const SMMDashboard = () => {
   // (e.g. Facebook ke case mein multiple Pages ho sakti hain, ye batayega
   // konsi Page pe post jaani hai). Key = platform id, Value = channel/account id.
   const [composeChannelIds, setComposeChannelIds] = useState<Record<string, string>>({});
+  // Jab kisi platform (e.g. Facebook) ke multiple connected Pages/accounts
+  // hon, to sirf ek button dikhta hai jispe click karne pe dropdown khulta
+  // hai jisme saari Pages ki list hoti hai. Ye state batata hai konsa
+  // platform ka dropdown abhi open hai.
+  const [openPlatformDropdown, setOpenPlatformDropdown] = useState<string | null>(null);
+  const platformDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Platform/Page picker dropdown ko bahar click karne par band karna
+  useEffect(() => {
+    if (!openPlatformDropdown) return;
+    const h = (e: MouseEvent) => {
+      if (platformDropdownRef.current && !platformDropdownRef.current.contains(e.target as Node)) {
+        setOpenPlatformDropdown(null);
+      }
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [openPlatformDropdown]);
   const [composeScheduleDate, setComposeScheduleDate] = useState("");
   const [composeScheduleTime, setComposeScheduleTime] = useState("");
   const [composeSaving, setComposeSaving]     = useState(false);
@@ -12979,31 +12997,85 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                     </div>
                   ):(
                     <div className="mt-2 space-y-2">
-                      <div className="flex flex-wrap gap-2">
-                        {clientConnectedChannels.map(ch=>{
-                          const platId = ch.platform?.toLowerCase();
-                          const platInfo = CONNECTABLE_PLATFORMS.find(p=>p.id===platId);
-                          const channelId = String(ch._id??ch.id??platId);
-                          // Agar is platform ki multiple connected accounts hain
-                          // (e.g. 2 Facebook Pages), to sirf wahi button "selected"
-                          // dikhna chahiye jiska channelId compose me chuna gaya ho.
-                          const isSelected =
-                            composePlatforms.includes(platId) &&
-                            composeChannelIds[platId] === channelId;
-                          return(
-                            <button key={channelId} type="button"
-                              onClick={()=>selectChannel(platId, channelId)}
-                              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition ${isSelected?"bg-green-600 text-white border-green-600":"smm-btn-outline"}`}>
-                              <span>{platInfo?.icon??"🔗"}</span>
-                              <span className="capitalize">{platInfo?.label??ch.platform}</span>
-                              {(ch.username||ch.name)&&(
-                                <span className={`text-xs ${isSelected?"text-white/80":"smm-text-muted"}`}>
-                                  @{ch.username??ch.name}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
+                      <div className="flex flex-wrap gap-2" ref={platformDropdownRef}>
+                        {(() => {
+                          // Same platform ke saare connected channels (e.g. multiple
+                          // Facebook Pages) ko ek group me le aate hain taaki UI me
+                          // us platform ka sirf EK button dikhe — YouTube jaisa.
+                          const grouped: Record<string, ConnectedChannel[]> = {};
+                          clientConnectedChannels.forEach(ch => {
+                            const p = ch.platform?.toLowerCase() ?? "unknown";
+                            (grouped[p] ??= []).push(ch);
+                          });
+
+                          return Object.entries(grouped).map(([platId, chs]) => {
+                            const platInfo = CONNECTABLE_PLATFORMS.find(p=>p.id===platId);
+                            const isPlatformSelected = composePlatforms.includes(platId);
+
+                            // ── Single account for this platform: ek simple toggle button ──
+                            if (chs.length === 1) {
+                              const ch = chs[0];
+                              const channelId = String(ch._id??ch.id??platId);
+                              const isSelected = isPlatformSelected && composeChannelIds[platId] === channelId;
+                              return (
+                                <button key={platId} type="button"
+                                  onClick={()=>selectChannel(platId, channelId)}
+                                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition ${isSelected?"bg-green-600 text-white border-green-600":"smm-btn-outline"}`}>
+                                  <span>{platInfo?.icon??"🔗"}</span>
+                                  <span className="capitalize">{platInfo?.label??ch.platform}</span>
+                                  {(ch.username||ch.name)&&(
+                                    <span className={`text-xs ${isSelected?"text-white/80":"smm-text-muted"}`}>
+                                      @{ch.username??ch.name}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            }
+
+                            // ── Multiple accounts (e.g. Facebook Pages): ek button jispe
+                            //    click karne se saari Pages ki dropdown list khulti hai ──
+                            const selectedChannelId = composeChannelIds[platId];
+                            const selectedChannel = chs.find(
+                              ch => String(ch._id??ch.id??platId) === selectedChannelId
+                            );
+                            const isOpen = openPlatformDropdown === platId;
+                            return (
+                              <div key={platId} className="relative">
+                                <button type="button"
+                                  onClick={()=>setOpenPlatformDropdown(isOpen?null:platId)}
+                                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition ${isPlatformSelected?"bg-green-600 text-white border-green-600":"smm-btn-outline"}`}>
+                                  <span>{platInfo?.icon??"🔗"}</span>
+                                  <span className="capitalize">{platInfo?.label??platId}</span>
+                                  {selectedChannel&&(
+                                    <span className={`text-xs ${isPlatformSelected?"text-white/80":"smm-text-muted"}`}>
+                                      @{selectedChannel.username??selectedChannel.name}
+                                    </span>
+                                  )}
+                                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen?"rotate-180":""}`}/>
+                                </button>
+                                {isOpen && (
+                                  <div className="absolute z-20 mt-1 min-w-[14rem] rounded-lg border smm-card shadow-lg py-1 max-h-64 overflow-y-auto">
+                                    <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide smm-text-muted">
+                                      Select {platInfo?.label??platId} Page
+                                    </p>
+                                    {chs.map(ch=>{
+                                      const channelId = String(ch._id??ch.id??platId);
+                                      const isSel = isPlatformSelected && composeChannelIds[platId] === channelId;
+                                      return (
+                                        <button key={channelId} type="button"
+                                          onClick={()=>{ selectChannel(platId, channelId); setOpenPlatformDropdown(null); }}
+                                          className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left transition hover:bg-green-50 dark:hover:bg-green-900/20 ${isSel?"bg-green-50 dark:bg-green-900/20 font-semibold text-green-700 dark:text-green-400":"smm-text-primary"}`}>
+                                          <span className="truncate">{ch.name??ch.username??"Page"}</span>
+                                          {isSel && <CheckCircle2 className="w-4 h-4 shrink-0"/>}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          });
+                        })()}
                       </div>
                       <p className="text-xs smm-text-muted">
                         {composePlatforms.length} platform{composePlatforms.length!==1?"s":""} selected
@@ -13019,7 +13091,7 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                         return (
                           <p className="text-xs text-blue-600">
                             ℹ️ {multi.map(([p]) => p).join(", ")} ke liye multiple accounts connected
-                            hain — jis button pe click karoge sirf usi Page/account pe post jaayegi.
+                            hain — button pe click karke dropdown se jo Page select karoge sirf usi Page/account pe post jaayegi.
                           </p>
                         );
                       })()}
