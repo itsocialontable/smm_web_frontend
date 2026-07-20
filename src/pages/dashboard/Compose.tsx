@@ -332,9 +332,14 @@
 // src/pages/dashboard/Compose.tsx
 // UPDATED v17: YouTube video upload + title + privacy support
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
-import { apiCreatePost, apiSaveDraft } from "@/lib/api";
+import {
+  apiCreatePost,
+  apiSaveDraft,
+  apiGetChannels,
+  type SocialChannel,
+} from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -354,6 +359,7 @@ import {
   Linkedin,
   Youtube,
   AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 
 const PLATFORMS = [
@@ -390,10 +396,43 @@ const Compose = () => {
   // Agar sirf YouTube select hai toh image mat dikhao
   const onlyYoutube = youtubeSelected && platforms.length === 1;
 
+  // ── Facebook Pages state ────────────────────────────────────────
+  // Jab account connect hota hai, backend usually har Facebook Page ko
+  // alag "channel" ke roop mein save karta hai (platform === "facebook").
+  // Yahan wahi list /api/social/accounts se fetch karke dikha rahe hain
+  // taaki post karte waqt user chun sake kaunsi Page pe post jaani hai.
+  const [facebookPages, setFacebookPages] = useState<SocialChannel[]>([]);
+  const [loadingPages, setLoadingPages] = useState(false);
+  const [facebookPageId, setFacebookPageId] = useState<string>("");
+  const facebookSelected = platforms.includes("facebook");
+
+  useEffect(() => {
+    if (!facebookSelected || !user?.token) return;
+    if (facebookPages.length > 0) return; // already loaded once
+
+    (async () => {
+      setLoadingPages(true);
+      const { data } = await apiGetChannels(user.token);
+      const all =
+        data?.channels ?? (data as { data?: SocialChannel[] })?.data ?? [];
+      const pages = all.filter(
+        (ch) => (ch.platform || "").toLowerCase() === "facebook"
+      );
+      setFacebookPages(pages);
+      // Agar sirf ek hi Page connected hai to usko auto-select kar do
+      if (pages.length === 1) {
+        setFacebookPageId(String(pages[0].id ?? pages[0]._id ?? ""));
+      }
+      setLoadingPages(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facebookSelected, user?.token]);
+
   const togglePlatform = (id: string) => {
     setPlatforms((p) =>
       p.includes(id) ? p.filter((x) => x !== id) : [...p, id]
     );
+    if (id === "facebook") setFacebookPageId(""); // toggle on/off, reselect
   };
 
   const addTag = () => {
@@ -428,6 +467,11 @@ const Compose = () => {
       toast.error("YouTube ke liye video file select karo");
       return;
     }
+    // Facebook validation — konsi Page pe post karni hai wo pata hona chahiye
+    if (facebookSelected && facebookPages.length > 0 && !facebookPageId) {
+      toast.error("Facebook ke liye ek Page select karo");
+      return;
+    }
 
     setSaving(true);
     setApiError(null);
@@ -441,7 +485,8 @@ const Compose = () => {
           content,
           platforms,
           tags,
-          mediaFiles
+          mediaFiles,
+          facebookSelected ? facebookPageId || undefined : undefined
         );
         if (error) {
           setApiError("Draft failed: " + error);
@@ -459,7 +504,9 @@ const Compose = () => {
           scheduledAt ? new Date(scheduledAt).toISOString() : null,
           // YouTube extra fields
           youtubeTitle   || undefined,
-          youtubePrivacy || undefined
+          youtubePrivacy || undefined,
+          undefined, // clientId — SMM-specific, ChannelsPage jaisi jagah se aata hai
+          facebookSelected ? facebookPageId || undefined : undefined
         );
         if (error) {
           setApiError("Post failed: " + error);
@@ -522,6 +569,61 @@ const Compose = () => {
               </p>
             )}
           </div>
+
+          {/* ── Facebook Page picker ── */}
+          {facebookSelected && (
+            <div className="border rounded-xl p-4 space-y-3 bg-blue-50/50 dark:bg-blue-950/10 border-blue-200 dark:border-blue-800">
+              <div className="flex items-center gap-2 text-sm font-semibold text-blue-600 dark:text-blue-400">
+                <Facebook className="w-4 h-4" />
+                Choose Facebook Page
+              </div>
+
+              {loadingPages ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Pages load ho rahi hain...
+                </div>
+              ) : facebookPages.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Koi Facebook Page connected nahi mili. Channels page se pehle
+                  apna Facebook account/Page connect karo.
+                </p>
+              ) : (
+                <div className="grid gap-2">
+                  {facebookPages.map((page) => {
+                    const id = String(page.id ?? page._id ?? "");
+                    const selected = facebookPageId === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setFacebookPageId(id)}
+                        className={`flex items-center gap-3 p-3 rounded-lg border text-left transition ${
+                          selected
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "hover:bg-accent"
+                        }`}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shrink-0">
+                          <Facebook className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {page.name ?? page.username ?? "Facebook Page"}
+                          </p>
+                        </div>
+                        {selected && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {facebookPages.length > 0 && !facebookPageId && (
+                <p className="text-xs text-muted-foreground">
+                  Post karne se pehle ek Page select karo.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Content */}
           <div>

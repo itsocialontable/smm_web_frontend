@@ -56,7 +56,22 @@ const App = () => (
             <Route path="/client-dashboard" element={<ClientDashboard />} />
 
             {/* OAuth Callback */}
+            {/* NOTE: Google/Facebook/etc. redirect back to whatever "redirect_uri"
+                the BACKEND registered with the provider. If that path doesn't
+                exactly match a route here, the app falls through to the "*" 404
+                route below — which is the "404 Not Found" seen after allowing
+                YouTube permissions. Until backend confirms the exact redirect_uri
+                it uses, every common variant is registered here so none of them
+                404. Ask backend for the exact value and, ideally, trim this list
+                down to just that one path. */}
             <Route path="/auth/callback" element={<OAuthCallback />} />
+            <Route path="/oauth/callback" element={<OAuthCallback />} />
+            <Route path="/callback" element={<OAuthCallback />} />
+            <Route path="/auth/google/callback" element={<OAuthCallback />} />
+            <Route path="/auth/youtube/callback" element={<OAuthCallback />} />
+            <Route path="/api/social/auth/google/callback" element={<OAuthCallback />} />
+            <Route path="/social/callback" element={<OAuthCallback />} />
+            <Route path="/dashboard/callback" element={<OAuthCallback />} />
 
             {/* Redirect /dashboard/accounts → SMM Dashboard channels view */}
             <Route path="/dashboard/accounts" element={<Navigate to="/smm-dashboard" state={{ view: "channels" }} replace />} />

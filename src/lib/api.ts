@@ -445,7 +445,8 @@ export const apiCreatePost = (
   scheduleAt: string | null,
   youtubeTitle?:   string,
   youtubePrivacy?: string,
-  clientId?: string        // ✅ ADD: SMM ke liye mandatory
+  clientId?: string,        // ✅ ADD: SMM ke liye mandatory
+  facebookPageId?: string   // ✅ ADD: kis FB Page pe post karna hai
 ) => {
   const fd = new FormData();
   fd.append("content", content);
@@ -465,6 +466,13 @@ export const apiCreatePost = (
   if (youtubeTitle)   fd.append("youtubeTitle",   youtubeTitle);
   if (youtubePrivacy) fd.append("youtubePrivacy", youtubePrivacy);
   if (clientId)       fd.append("clientId",       clientId);   // ✅ ADD
+  if (facebookPageId) {
+    // Backend field ka exact naam confirm nahi hai isliye dono common
+    // names bhej rahe hain — jo bhi backend expect kare match ho jaayega.
+    // Backend confirm hone ke baad dusri line hata dena.
+    fd.append("facebookPageId", facebookPageId);
+    fd.append("pageId",         facebookPageId);
+  }
 
   return authRequestFormData<CreatePostRes>("/api/posts/create", token, fd);
 };
@@ -475,7 +483,8 @@ export const apiSaveDraft = (
   content: string,
   platforms: string[],
   tags: string[],
-  mediaFiles: (File | string)[]
+  mediaFiles: (File | string)[],
+  facebookPageId?: string   // ✅ ADD: kis FB Page pe draft banega
 ) => {
   const fd = new FormData();
   fd.append("content", content);
@@ -490,6 +499,11 @@ export const apiSaveDraft = (
       fd.append("mediaUrls[]", m);
     }
   });
+
+  if (facebookPageId) {
+    fd.append("facebookPageId", facebookPageId);
+    fd.append("pageId",         facebookPageId);
+  }
 
   return authRequestFormData<CreatePostRes>("/api/posts/draft", token, fd);
 };

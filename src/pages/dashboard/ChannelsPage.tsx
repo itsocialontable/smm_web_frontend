@@ -116,6 +116,13 @@ const handleSelectPlatform = async (platform: string) => {
   }
   toast.info(`Redirecting to ${platform}…`);
 
+  // FIX: platform ko localStorage mein save karo BEFORE redirect —
+  // OAuthCallback.tsx isko fallback ke roop mein use karta hai jab
+  // provider (Google/Facebook) ke redirect URL mein ?platform= param
+  // nahi hota. Pehle ye missing tha, isliye YouTube connect ke baad
+  // platform detect nahi ho pata tha.
+  localStorage.setItem("oauth_platform", platform);
+
   // GET /api/social/auth/:platform — token Authorization header mein jayega
   const { data, error } = await apiGetOAuthUrl(freshToken, platform);
 
@@ -131,7 +138,16 @@ const handleSelectPlatform = async (platform: string) => {
     return;
   }
 
-  // Instagram/Facebook/Twitter login page pe redirect
+  // Backend jo "state" authUrl ke andar generate karta hai wahi provider
+  // redirect ke query param "state" mein wapas aayega — usually URL se hi
+  // mil jaayega, ye sirf backup hai agar backend state ko alag field mein
+  // bhi bhejta ho.
+  const stateFromResp =
+    (data as { state?: string; oauthState?: string })?.state ??
+    (data as { state?: string; oauthState?: string })?.oauthState;
+  if (stateFromResp) localStorage.setItem("oauth_state", stateFromResp);
+
+  // Instagram/Facebook/Twitter/YouTube login page pe redirect
   window.location.href = authUrl;
 };
 
