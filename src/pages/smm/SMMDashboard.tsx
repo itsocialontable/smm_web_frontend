@@ -11627,6 +11627,8 @@ interface ClientWithChannels {
 interface ConnectedChannel {
   _id?: string;
   id?: string;
+  accountId?: string; // platform ka asli Page/account ID — posting/disconnect ke liye yehi use hota hai
+  accountName?: string; // platform ka asli Page/account naam
   platform: string;
   username?: string;
   name?: string;
@@ -11650,6 +11652,17 @@ const getChannelAvatar = (ch: ConnectedChannel): string | undefined => {
   const c = ch as Record<string, unknown>;
   const val = c.profileImage ?? c.avatar ?? c.profile_image ?? c.picture;
   return typeof val === "string" && val.trim() ? val.trim() : undefined;
+};
+
+// Jab post publish karni ho to backend ko us specific Page ka accountId
+// chahiye (e.g. Facebook Page ID "100210444819566") — Mongo record ka
+// _id nahi. Isliye channel identify karne ke liye hamesha accountId ko
+// pehle priority dete hain, sirf tabhi _id/id pe fallback jab accountId
+// missing ho.
+const getChannelId = (ch: ConnectedChannel): string => {
+  const c = ch as Record<string, unknown>;
+  const val = c.accountId ?? c._id ?? c.id;
+  return val != null ? String(val) : "";
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -13037,7 +13050,7 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                             // ── Single account for this platform: ek simple toggle button ──
                             if (chs.length === 1) {
                               const ch = chs[0];
-                              const channelId = String(ch._id??ch.id??platId);
+                              const channelId = getChannelId(ch) || platId;
                               const isSelected = isPlatformSelected && composeChannelIds[platId] === channelId;
                               return (
                                 <button key={platId} type="button"
@@ -13058,7 +13071,7 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                             //    click karne se saari Pages ki dropdown list khulti hai ──
                             const selectedChannelId = composeChannelIds[platId];
                             const selectedChannel = chs.find(
-                              ch => String(ch._id??ch.id??platId) === selectedChannelId
+                              ch => (getChannelId(ch) || platId) === selectedChannelId
                             );
                             // Jab tak user ne khud koi Page choose nahi ki, button pe
                             // "Facebook" jaisa generic word nahi — balki pehli/main
@@ -13083,7 +13096,7 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                                       Select {platInfo?.label??platId} Page
                                     </p>
                                     {chs.map((ch,idx)=>{
-                                      const channelId = String(ch._id??ch.id??platId);
+                                      const channelId = getChannelId(ch) || platId;
                                       const isSel = isPlatformSelected && composeChannelIds[platId] === channelId;
                                       const label = getChannelName(ch) ?? `${platInfo?.label??platId} Page ${idx+1}`;
                                       return (
