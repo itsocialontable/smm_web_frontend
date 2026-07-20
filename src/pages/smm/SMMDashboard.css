@@ -1,0 +1,124 @@
+/* ─── SMM Dashboard ─── */
+
+/* Light defaults */
+:root {
+  --smm-bg:        #f8fafc;
+  --smm-surface:   #ffffff;
+  --smm-border:    #e2e8f0;
+  --smm-text-1:    #0f172a;
+  --smm-text-2:    #334155;
+  --smm-text-3:    #64748b;
+  --smm-hover-bg:  #f1f5f9;
+  --smm-shadow:    0 1px 3px rgba(0,0,0,0.06);
+  --smm-nav-active-bg:   #16a34a;
+  --smm-nav-active-text: #ffffff;
+  --smm-notif-bg:  #ffffff;
+  --smm-notif-unread: #f0fdf4;
+  --smm-profile-bg: #f0fdf4;
+  --smm-profile-border: #dcfce7;
+  --smm-input-bg:  #ffffff;
+  --smm-modal-bg:  #ffffff;
+}
+
+/* Dark theme */
+.smm-dark {
+  --smm-bg:        #0f172a;
+  --smm-surface:   #1e293b;
+  --smm-border:    #334155;
+  --smm-text-1:    #f1f5f9;
+  --smm-text-2:    #cbd5e1;
+  --smm-text-3:    #94a3b8;
+  --smm-hover-bg:  #334155;
+  --smm-shadow:    0 1px 3px rgba(0,0,0,0.3);
+  --smm-nav-active-bg:   #15803d;
+  --smm-nav-active-text: #ffffff;
+  --smm-notif-bg:  #1e293b;
+  --smm-notif-unread: #14532d33;
+  --smm-profile-bg: #14532d22;
+  --smm-profile-border: #16a34a44;
+  --smm-input-bg:  #0f172a;
+  --smm-modal-bg:  #1e293b;
+}
+
+.smm-root      { background: var(--smm-bg); color: var(--smm-text-1); }
+.smm-sidebar   { background: var(--smm-surface); border-right: 1px solid var(--smm-border); box-shadow: var(--smm-shadow); }
+.smm-main      { background: var(--smm-bg); }
+.smm-header    { background: var(--smm-surface); border-bottom: 1px solid var(--smm-border); }
+.smm-card      { background: var(--smm-surface) !important; border-color: var(--smm-border) !important; }
+.smm-modal     { background: var(--smm-modal-bg) !important; border-color: var(--smm-border) !important; }
+
+.smm-border    { border-color: var(--smm-border) !important; }
+.smm-text-primary   { color: var(--smm-text-1) !important; }
+.smm-text-secondary { color: var(--smm-text-2) !important; }
+.smm-text-muted     { color: var(--smm-text-3) !important; }
+
+/* Nav */
+.smm-nav-active { background: var(--smm-nav-active-bg) !important; color: var(--smm-nav-active-text) !important; }
+.smm-nav-idle   { color: var(--smm-text-2); }
+.smm-nav-idle:hover { background: var(--smm-hover-bg); }
+
+/* Profile card */
+.smm-profile-card { background: var(--smm-profile-bg); border-color: var(--smm-profile-border); }
+
+/* Hover */
+.hover\:smm-bg-hover:hover, .smm-bg-hover { background: var(--smm-hover-bg) !important; }
+
+/* Inputs / Selects */
+.smm-input, .smm-textarea, .smm-select {
+  background: var(--smm-input-bg) !important;
+  border-color: var(--smm-border) !important;
+  color: var(--smm-text-1) !important;
+}
+.smm-input::placeholder, .smm-textarea::placeholder { color: var(--smm-text-3); }
+
+/* Buttons */
+.smm-btn-outline {
+  border-color: var(--smm-border) !important;
+  color: var(--smm-text-2) !important;
+  background: transparent !important;
+}
+.smm-btn-outline:hover { background: var(--smm-hover-bg) !important; }
+
+/* Icon buttons */
+.smm-icon-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+.smm-icon-btn:hover { background: var(--smm-hover-bg); }
+
+/* Notification panel */
+.smm-notif-panel    { background: var(--smm-notif-bg); border-color: var(--smm-border); }
+.smm-notif-header   { background: var(--smm-surface); }
+.smm-notif-item     { background: var(--smm-surface); transition: background 0.1s; }
+.smm-notif-item:hover { background: var(--smm-hover-bg); }
+.smm-notif-unread   { background: var(--smm-notif-unread) !important; }
+
+/* Platform badge */
+.smm-platform-badge { background: var(--smm-hover-bg); color: var(--smm-text-2); }
+
+/* Upload area */
+.smm-upload-area { border-color: var(--smm-border); }
+.smm-upload-area:hover { background: var(--smm-hover-bg); }
+
+/* Comment */
+.smm-comment { background: var(--smm-hover-bg); }
+
+/* Calendar header */
+.smm-cal-header { background: var(--smm-hover-bg); }
+.smm-cal-nav-btn { transition: background 0.15s; }
+.smm-cal-nav-btn:hover { background: var(--smm-hover-bg); }
+
+/* Modal overlay */
+.smm-modal-overlay { backdrop-filter: blur(2px); }
+
+/* Scrollbar (dark mode) */
+.smm-dark ::-webkit-scrollbar        { width: 6px; height: 6px; }
+.smm-dark ::-webkit-scrollbar-track  { background: var(--smm-bg); }
+.smm-dark ::-webkit-scrollbar-thumb  { background: #334155; border-radius: 3px; }
+.smm-dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Responsive */
+@media (max-width: 768px) { .smm-sidebar { display: none !important; } }
