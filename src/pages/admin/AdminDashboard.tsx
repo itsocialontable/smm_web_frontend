@@ -3381,6 +3381,7 @@ import {
   apiAdminGetUsers,
   apiAdminCreateUser,
   apiAdminUpdateUser,
+  apiAdminChangeUserPassword,
   apiAdminProfile,
   apiAdminChangePassword,
   apiAdminUploadProfileImage,
@@ -3980,8 +3981,10 @@ const AdminDashboard = () => {
   const [imgUploading, setImgUploading] = useState(false);
   const [editClient, setEditClient] = useState<Client | null>(null);
   const [editClientSaving, setEditClientSaving] = useState(false);
+  const [editClientNewPassword, setEditClientNewPassword] = useState("");
   const [editMember, setEditMember] = useState<TeamMember | null>(null);
   const [editMemberSaving, setEditMemberSaving] = useState(false);
+  const [editMemberNewPassword, setEditMemberNewPassword] = useState("");
   const [projects, setProjects] = useState<any[]>([]);
 
   // ── Dark mode style helper ──────────────────────────────────────────────────
@@ -5234,7 +5237,7 @@ const AdminDashboard = () => {
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button
-                  onClick={() => setEditClient(c)}
+                  onClick={() => { setEditClient(c); setEditClientNewPassword(""); }}
                   style={{
                     width: 36, height: 36, borderRadius: 9,
                     border: "1px solid #dbeafe", background: "#eff6ff",
@@ -5537,7 +5540,7 @@ const AdminDashboard = () => {
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
-                    onClick={() => setEditMember(m)}
+                    onClick={() => { setEditMember(m); setEditMemberNewPassword(""); }}
                     style={{
                       width: 36, height: 36, borderRadius: 9,
                       border: "1px solid #dbeafe", background: "#eff6ff",
@@ -6724,7 +6727,7 @@ const AdminDashboard = () => {
 
       {/* ── Edit Client Modal ───────────────────────────────────────────── */}
       {editClient && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setEditClient(null)}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => { setEditClient(null); setEditClientNewPassword(""); }}>
           {/* FIXED: modal ki height fixed nahi thi, isliye content zyada
               hone par popup viewport se bahar chala jaata tha aur neeche
               wale "Save Changes" / "Cancel" buttons tak scroll/click nahi
@@ -6752,6 +6755,18 @@ const AdminDashboard = () => {
                   />
                 </div>
               ))}
+              <div>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: darkMode ? "#94a3b8" : "#475569", display: "block", marginBottom: 5 }}>
+                  Reset Password <span style={{ fontWeight: 400, color: darkMode ? "#64748b" : "#94a3b8" }}>(leave blank to keep current password)</span>
+                </label>
+                <input
+                  type="text"
+                  value={editClientNewPassword}
+                  onChange={(e) => setEditClientNewPassword(e.target.value)}
+                  placeholder="Set a new password"
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: `1.5px solid ${dm.borderMd}`, fontSize: 13.5, color: dm.textSm, outline: "none", boxSizing: "border-box", background: dm.input }}
+                />
+              </div>
               <div>
                 <label style={{ fontSize: 12.5, fontWeight: 600, color: darkMode ? "#94a3b8" : "#475569", display: "block", marginBottom: 5 }}>Platforms</label>
                 <div className="platform-selector__grid">
@@ -6793,18 +6808,43 @@ const AdminDashboard = () => {
                     budget: editClient.budget,
                     platforms: editClient.platforms,
                   });
-                  setEditClientSaving(false);
                   if (error) {
+                    setEditClientSaving(false);
                     toast.error("Update failed: " + error);
                     return;
                   }
-                  setClients((cs) => cs.map((c) => c.id === editClient.id ? editClient : c));
+                  // FIXED: agar admin ne "Reset Password" field me kuch
+                  // likha hai, to backend par naya password set karo aur
+                  // usse turant local cache me bhi save karo — taaki eye
+                  // button ab is client ke liye real password dikha sake
+                  // (pehle purane/pehle-se-bane users ke liye password
+                  // hamesha "hidden dots" hi dikhta tha kyunki unka real
+                  // password kabhi bhi is browser ko pata nahi tha).
+                  let updatedPassword = editClient.password;
+                  if (editClientNewPassword.trim()) {
+                    const pwRes = await apiAdminChangeUserPassword(
+                      adminSession?.token || "",
+                      editClient.id,
+                      editClientNewPassword.trim(),
+                      editClientNewPassword.trim()
+                    );
+                    if (pwRes.error) {
+                      setEditClientSaving(false);
+                      toast.error("Password reset failed: " + pwRes.error);
+                      return;
+                    }
+                    updatedPassword = editClientNewPassword.trim();
+                    cachePassword(editClient.id, updatedPassword);
+                  }
+                  setEditClientSaving(false);
+                  setClients((cs) => cs.map((c) => c.id === editClient.id ? { ...editClient, password: updatedPassword } : c));
+                  setEditClientNewPassword("");
                   setEditClient(null);
                   toast.success("Client updated!");
                 }}
                 style={{ flex: 1, padding: "10px", borderRadius: 10, background: editClientSaving ? "#93c5fd" : "linear-gradient(135deg, #3b82f6, #2563eb)", color: "white", border: "none", fontWeight: 700, fontSize: 14, cursor: editClientSaving ? "not-allowed" : "pointer" }}
               >{editClientSaving ? "Saving..." : "Save Changes"}</button>
-              <button onClick={() => setEditClient(null)} style={{ padding: "10px 20px", borderRadius: 10, background: dm.input, border: `1.5px solid ${dm.borderMd}`, color: dm.inputText, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>Cancel</button>
+              <button onClick={() => { setEditClient(null); setEditClientNewPassword(""); }} style={{ padding: "10px 20px", borderRadius: 10, background: dm.input, border: `1.5px solid ${dm.borderMd}`, color: dm.inputText, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>Cancel</button>
             </div>
           </div>
         </div>
@@ -6812,7 +6852,7 @@ const AdminDashboard = () => {
 
       {/* ── Edit Member Modal ───────────────────────────────────────────── */}
       {editMember && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setEditMember(null)}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => { setEditMember(null); setEditMemberNewPassword(""); }}>
           <div style={{ background: darkMode ? "#1e293b" : "white", borderRadius: 18, padding: 22, width: "100%", maxWidth: 480, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.2)", border: `1px solid ${dm.border}` }} onClick={(e) => e.stopPropagation()}>
             <h2 style={{ fontSize: 17, fontWeight: 800, color: dm.text, marginBottom: 14, flexShrink: 0 }}>Edit {editMember.role === "smm" ? "SMM Executive" : "Graphic Designer"}</h2>
             <div style={{ display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", paddingRight: 4 }}>
@@ -6843,6 +6883,18 @@ const AdminDashboard = () => {
                   <option value="inactive">Inactive</option>
                 </select>
               </div>
+              <div>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: darkMode ? "#94a3b8" : "#475569", display: "block", marginBottom: 5 }}>
+                  Reset Password <span style={{ fontWeight: 400, color: darkMode ? "#64748b" : "#94a3b8" }}>(leave blank to keep current password)</span>
+                </label>
+                <input
+                  type="text"
+                  value={editMemberNewPassword}
+                  onChange={(e) => setEditMemberNewPassword(e.target.value)}
+                  placeholder="Set a new password"
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: `1.5px solid ${dm.borderMd}`, fontSize: 13.5, color: dm.textSm, outline: "none", boxSizing: "border-box", background: dm.input }}
+                />
+              </div>
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 16, flexShrink: 0 }}>
               <button
@@ -6855,18 +6907,41 @@ const AdminDashboard = () => {
                     phoneNumber: editMember.phone,
                     status: editMember.status,
                   });
-                  setEditMemberSaving(false);
                   if (error) {
+                    setEditMemberSaving(false);
                     toast.error("Update failed: " + error);
                     return;
                   }
-                  setTeam((ts) => ts.map((t) => t.id === editMember.id ? editMember : t));
+                  // FIXED: agar admin ne "Reset Password" field bhara hai,
+                  // to naya password backend par set karo aur local cache
+                  // me bhi save karo, taaki eye button ab real password
+                  // dikha sake (purane users ke liye pehle hamesha masked
+                  // dots hi dikhte the).
+                  let updatedPassword = editMember.password;
+                  if (editMemberNewPassword.trim()) {
+                    const pwRes = await apiAdminChangeUserPassword(
+                      adminSession?.token || "",
+                      editMember.id,
+                      editMemberNewPassword.trim(),
+                      editMemberNewPassword.trim()
+                    );
+                    if (pwRes.error) {
+                      setEditMemberSaving(false);
+                      toast.error("Password reset failed: " + pwRes.error);
+                      return;
+                    }
+                    updatedPassword = editMemberNewPassword.trim();
+                    cachePassword(editMember.id, updatedPassword);
+                  }
+                  setEditMemberSaving(false);
+                  setTeam((ts) => ts.map((t) => t.id === editMember.id ? { ...editMember, password: updatedPassword } : t));
+                  setEditMemberNewPassword("");
                   setEditMember(null);
                   toast.success("Member updated!");
                 }}
                 style={{ flex: 1, padding: "10px", borderRadius: 10, background: editMemberSaving ? "#93c5fd" : "linear-gradient(135deg, #33496a, #1e3a5f)", color: "white", border: "none", fontWeight: 700, fontSize: 14, cursor: editMemberSaving ? "not-allowed" : "pointer" }}
               >{editMemberSaving ? "Saving..." : "Save Changes"}</button>
-              <button onClick={() => setEditMember(null)} style={{ padding: "10px 20px", borderRadius: 10, background: dm.input, border: `1.5px solid ${dm.borderMd}`, color: dm.inputText, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>Cancel</button>
+              <button onClick={() => { setEditMember(null); setEditMemberNewPassword(""); }} style={{ padding: "10px 20px", borderRadius: 10, background: dm.input, border: `1.5px solid ${dm.borderMd}`, color: dm.inputText, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>Cancel</button>
             </div>
           </div>
         </div>
