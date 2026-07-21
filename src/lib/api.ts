@@ -32,6 +32,23 @@ export const OAUTH_ROUTES: Record<PlatformId, string> = {
   pinterest: "/api/social/auth/pinterest",
 };
 
+// ─── Backend Platform Key Mapping ───────────────────────────────────────────
+// Backend dev ka naya rule: Instagram ab purane Facebook-linked Instagram
+// OAuth flow se connect nahi hota — ab ek naya, alag platform key
+// "instagramLogin" use hota hai jo seedha Instagram ka apna login page
+// dikhata hai (Facebook nahi). Ye sirf BACKEND ko bheji jaane wali request
+// (auth URL fetch + connect confirm) ke liye hai — UI mein (buttons, channel
+// list, localStorage, saare pages) hamesha "instagram" hi use/store/dikhaya
+// jayega. Success ke baad backend khud account ko "instagram" platform ke
+// roop mein hi return karega, isliye channel list mein bhi kuch alag nahi
+// dikhega.
+const BACKEND_PLATFORM_KEY: Partial<Record<string, string>> = {
+  instagram: "instagramLogin",
+};
+
+const toBackendPlatform = (platform: string): string =>
+  BACKEND_PLATFORM_KEY[platform.toLowerCase().trim()] ?? platform;
+
 const API_KEY =
   import.meta.env.VITE_API_KEY ||
   "sf_live_a7k92mXpQ3nR8vTz5wYdJ6bLcU1eHi4o";
@@ -264,8 +281,12 @@ export const apiSocialConnect = (
   codeVerifier?: string,
   clientId?: string
 ) => {
+  // Backend ko hamesha mapped key bhejo (e.g. instagram -> instagramLogin);
+  // caller (UI) apna original "platform" hi use karta rehta hai.
+  const backendPlatform = toBackendPlatform(platform);
+
   console.log("JWT Token:", token);
-  console.log("Platform:", platform);
+  console.log("Platform:", backendPlatform);
   console.log("Code:", code);
   console.log("ClientId:", clientId);
 
@@ -274,7 +295,7 @@ export const apiSocialConnect = (
     "POST",
     token,
     {
-      platform,
+      platform: backendPlatform,
       code,
       state,
       codeVerifier,
@@ -295,12 +316,15 @@ export const apiSocialConnect = (
 // redirect_uri ke saath bana hua authUrl leke aata hai. Response ke
 // `authUrl` (ya `url`/`redirectUrl`) ko seedha window.location.href
 // mein daalo, usme kuch add/edit mat karo.
-export const apiGetOAuthUrl = (token: string, platform: string, clientId?: string) =>
-  authRequest<{ authUrl?: string; url?: string; redirectUrl?: string }>(
-    `/api/social/auth/${platform}${clientId ? `?clientId=${clientId}` : ""}`,
+export const apiGetOAuthUrl = (token: string, platform: string, clientId?: string) => {
+  // e.g. "instagram" -> "instagramLogin" (naya direct-Instagram-login flow)
+  const backendPlatform = toBackendPlatform(platform);
+  return authRequest<{ authUrl?: string; url?: string; redirectUrl?: string }>(
+    `/api/social/auth/${backendPlatform}${clientId ? `?clientId=${clientId}` : ""}`,
     "GET",
     token
   );
+};
 
 // ─── CHANNELS ────────────────────────────────────────────────────────────────
 
