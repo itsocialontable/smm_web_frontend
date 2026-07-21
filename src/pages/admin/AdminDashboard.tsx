@@ -3393,6 +3393,40 @@ import {
 // NOTE: pehle yahan CLIENT_STORE_KEY/TEAM_STORE_KEY (localStorage keys)
 // the — ab clients/team backend se aate hain, in constants ki zarurat nahi.
 
+// ── Password cache ───────────────────────────────────────────────────────────
+// FIXED: Security ke liye backend asli password wapas nahi bhejta (sirf
+// hashed store hota hai), isliye list refresh hone par password field
+// hamesha masked "••••••" aata tha — eye button "on" karne par bhi wahi
+// masked string dikhti thi, isliye ON aur OFF dono me password "hidden"
+// jaisa hi lagta tha. Ab jab bhi admin is browser se koi client/SMM/GD
+// banata hai, uska plain-text password yahan (localStorage) cache ho
+// jaata hai, aur list load hone par us cache se real password wapas
+// dikhaya jaata hai — taaki eye button dabane par sach me real password
+// aur dots ke beech toggle ho. (Jo users kisi doosre browser/device se
+// bane the, unke liye real password is browser ko pata hi nahi, isliye
+// unke liye masked dots hi dikhega — yeh security ki wajah se hai,
+// backend plain password kabhi return nahi karta.)
+const PW_CACHE_KEY = "smm_admin_pw_cache_v1";
+
+const loadPwCache = (): Record<string, string> => {
+  try {
+    return JSON.parse(localStorage.getItem(PW_CACHE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+};
+
+const cachePassword = (id: string, password: string) => {
+  if (!id || !password) return;
+  try {
+    const cache = loadPwCache();
+    cache[id] = password;
+    localStorage.setItem(PW_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // localStorage not available — ignore, falls back to masked password
+  }
+};
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Role = "client" | "graphic_designer" | "smm";
 type Tab =
@@ -4105,6 +4139,11 @@ const AdminDashboard = () => {
         );
       });
 
+      // FIXED: pehle hardcoded "••••••" bhej dete the, isliye eye button
+      // ON/OFF dono me masked dots hi dikhte the. Ab is-browser-me-cached
+      // real password (agar maujood ho) use karte hain.
+      const pwCache = loadPwCache();
+
       setClients(
         clientUsers.map((u: any) => ({
           id: u._id,
@@ -4113,7 +4152,7 @@ const AdminDashboard = () => {
           phone: u.phoneNumber || "",
           company: u.companyName || "",
           industry: u.industry || "",
-          password: "••••••",
+          password: pwCache[u._id] || "••••••",
           createdAt: u.createdAt?.slice(0, 10) || "",
           status: u.isActive ? "active" : "inactive",
           platforms: [],
@@ -4128,7 +4167,7 @@ const AdminDashboard = () => {
           email: u.email,
           phone: u.phoneNumber || "",
           role: "smm" as Role,
-          password: "••••••",
+          password: pwCache[u._id] || "••••••",
           createdAt: u.createdAt?.slice(0, 10) || "",
           status: (u.isActive ? "active" : "inactive") as "active" | "inactive",
         })),
@@ -4138,7 +4177,7 @@ const AdminDashboard = () => {
           email: u.email,
           phone: u.phoneNumber || "",
           role: "graphic_designer" as Role,
-          password: "••••••",
+          password: pwCache[u._id] || "••••••",
           createdAt: u.createdAt?.slice(0, 10) || "",
           status: (u.isActive ? "active" : "inactive") as "active" | "inactive",
         })),
@@ -4285,6 +4324,7 @@ const AdminDashboard = () => {
       return;
     }
     const newId = (data as any)?.data?.user?._id || "C" + generateId();
+    cachePassword(newId, clientForm.password);
     const nc: Client = {
       id: newId,
       name: clientForm.name,
@@ -5594,6 +5634,7 @@ const AdminDashboard = () => {
       setLoading(false);
       if (error) { toast.error(error); return; }
       const newId = (data as any)?.data?.user?._id || "C" + generateId();
+      cachePassword(newId, form.password);
       const nc: Client = {
         id: newId, name: form.name, email: form.email, phone: form.phone,
         company: form.company, password: form.password, budget: form.budget,
@@ -6639,6 +6680,7 @@ const AdminDashboard = () => {
                 }
                 const newId =
                   (data as any)?.data?.user?._id || m.id;
+                cachePassword(newId, m.password);
                 setTeam((t) => [{ ...m, id: newId }, ...t]);
                 setTab("smm");
                 toast.success("SMM Executive created!");
@@ -6667,6 +6709,7 @@ const AdminDashboard = () => {
                 }
                 const newId =
                   (data as any)?.data?.user?._id || m.id;
+                cachePassword(newId, m.password);
                 setTeam((t) => [{ ...m, id: newId }, ...t]);
                 setTab("gd");
                 toast.success("Graphic Designer created!");
@@ -6682,9 +6725,15 @@ const AdminDashboard = () => {
       {/* ── Edit Client Modal ───────────────────────────────────────────── */}
       {editClient && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setEditClient(null)}>
-          <div style={{ background: darkMode ? "#1e293b" : "white", borderRadius: 18, padding: 28, width: "100%", maxWidth: 480, boxShadow: "0 20px 60px rgba(0,0,0,0.2)", border: `1px solid ${dm.border}` }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ fontSize: 18, fontWeight: 800, color: dm.text, marginBottom: 20 }}>Edit Client</h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {/* FIXED: modal ki height fixed nahi thi, isliye content zyada
+              hone par popup viewport se bahar chala jaata tha aur neeche
+              wale "Save Changes" / "Cancel" buttons tak scroll/click nahi
+              ho paata tha. Ab maxHeight + internal scroll add kiya hai
+              taaki poora popup screen ke andar hi rahe aur buttons hamesha
+              click karne layak hon. */}
+          <div style={{ background: darkMode ? "#1e293b" : "white", borderRadius: 18, padding: 22, width: "100%", maxWidth: 480, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.2)", border: `1px solid ${dm.border}` }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: 17, fontWeight: 800, color: dm.text, marginBottom: 14, flexShrink: 0 }}>Edit Client</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", paddingRight: 4 }}>
               {([
                 { label: "Full Name *", key: "name", type: "text", placeholder: "Priya Sharma" },
                 { label: "Email *", key: "email", type: "email", placeholder: "client@company.com" },
@@ -6731,7 +6780,7 @@ const AdminDashboard = () => {
                 </div>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+            <div style={{ display: "flex", gap: 10, marginTop: 16, flexShrink: 0 }}>
               <button
                 disabled={editClientSaving}
                 onClick={async () => {
@@ -6764,9 +6813,9 @@ const AdminDashboard = () => {
       {/* ── Edit Member Modal ───────────────────────────────────────────── */}
       {editMember && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setEditMember(null)}>
-          <div style={{ background: darkMode ? "#1e293b" : "white", borderRadius: 18, padding: 28, width: "100%", maxWidth: 480, boxShadow: "0 20px 60px rgba(0,0,0,0.2)", border: `1px solid ${dm.border}` }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ fontSize: 18, fontWeight: 800, color: dm.text, marginBottom: 20 }}>Edit {editMember.role === "smm" ? "SMM Executive" : "Graphic Designer"}</h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ background: darkMode ? "#1e293b" : "white", borderRadius: 18, padding: 22, width: "100%", maxWidth: 480, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.2)", border: `1px solid ${dm.border}` }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: 17, fontWeight: 800, color: dm.text, marginBottom: 14, flexShrink: 0 }}>Edit {editMember.role === "smm" ? "SMM Executive" : "Graphic Designer"}</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", paddingRight: 4 }}>
               {([
                 { label: "Full Name *", key: "name", type: "text", placeholder: "Karan Mehta" },
                 { label: "Email *", key: "email", type: "email", placeholder: "karan@agency.com" },
@@ -6795,7 +6844,7 @@ const AdminDashboard = () => {
                 </select>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+            <div style={{ display: "flex", gap: 10, marginTop: 16, flexShrink: 0 }}>
               <button
                 disabled={editMemberSaving}
                 onClick={async () => {
