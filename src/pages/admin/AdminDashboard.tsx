@@ -3382,6 +3382,7 @@ import {
   apiAdminCreateUser,
   apiAdminUpdateUser,
   apiAdminChangeUserPassword,
+  apiAdminDeleteUser,
   apiAdminProfile,
   apiAdminChangePassword,
   apiAdminUploadProfileImage,
@@ -5247,7 +5248,21 @@ const AdminDashboard = () => {
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
+                    // FIXED: pehle delete button sirf local state (setClients)
+                    // se row hata deta tha — backend ko kabhi delete request
+                    // bheja hi nahi jaata tha. Isi wajah se refresh/reload
+                    // karte hi client wapas list me aa jaata tha (kyunki
+                    // backend me wo record ab bhi maujood tha). Ab pehle
+                    // confirmation liya jaata hai, fir asli DELETE API call
+                    // hoti hai, aur sirf success par hi row list se hataya
+                    // jaata hai — taaki delete hamesha permanent rahe.
+                    if (!window.confirm(`Delete ${c.name}? This cannot be undone.`)) return;
+                    const { error } = await apiAdminDeleteUser(adminSession?.token || "", c.id);
+                    if (error) {
+                      toast.error("Delete failed: " + error);
+                      return;
+                    }
                     setClients((cs) => cs.filter((x) => x.id !== c.id));
                     toast.success("Client removed");
                   }}
@@ -5550,7 +5565,18 @@ const AdminDashboard = () => {
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
+                      // FIXED: pehle sirf local state se hataya jaata tha,
+                      // backend delete API kabhi call hi nahi hoti thi —
+                      // refresh karte hi member wapas aa jaata tha. Ab
+                      // confirmation ke baad asli DELETE call hoti hai,
+                      // success par hi row hataya jaata hai.
+                      if (!window.confirm(`Delete ${m.name}? This cannot be undone.`)) return;
+                      const { error } = await apiAdminDeleteUser(adminSession?.token || "", m.id);
+                      if (error) {
+                        toast.error("Delete failed: " + error);
+                        return;
+                      }
                       setTeam((ts) => ts.filter((x) => x.id !== m.id));
                       toast.success("Member removed");
                     }}

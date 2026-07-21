@@ -977,6 +977,13 @@ export const apiAdminToggleStatus = (token: string, userId: string) =>
     token
   );
 
+export const apiAdminDeleteUser = (token: string, userId: string) =>
+  authRequest<{ message?: string; msg?: string; [key: string]: unknown }>(
+    `/api/admin/users/${userId}`,
+    "DELETE",
+    token
+  );
+
 export const apiAdminUpdateUser = (
   token: string,
   userId: string,
