@@ -3380,6 +3380,7 @@ import {
   apiAdminDashboard,
   apiAdminGetUsers,
   apiAdminCreateUser,
+  apiAdminUpdateUser,
   apiAdminProfile,
   apiAdminChangePassword,
   apiAdminUploadProfileImage,
@@ -3944,7 +3945,9 @@ const AdminDashboard = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [imgUploading, setImgUploading] = useState(false);
   const [editClient, setEditClient] = useState<Client | null>(null);
+  const [editClientSaving, setEditClientSaving] = useState(false);
   const [editMember, setEditMember] = useState<TeamMember | null>(null);
+  const [editMemberSaving, setEditMemberSaving] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
 
   // ── Dark mode style helper ──────────────────────────────────────────────────
@@ -6700,16 +6703,58 @@ const AdminDashboard = () => {
                   />
                 </div>
               ))}
+              <div>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: darkMode ? "#94a3b8" : "#475569", display: "block", marginBottom: 5 }}>Platforms</label>
+                <div className="platform-selector__grid">
+                  {PLATFORMS.map((p) => {
+                    const selected = (editClient.platforms ?? []).includes(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() =>
+                          setEditClient({
+                            ...editClient,
+                            platforms: selected
+                              ? (editClient.platforms ?? []).filter((pid) => pid !== p.id)
+                              : [...(editClient.platforms ?? []), p.id],
+                          })
+                        }
+                        className={`platform-selector__chip ${selected ? "platform-selector__chip--selected" : "platform-selector__chip--unselected"}`}
+                        style={selected ? {} : { borderColor: dm.borderMd, background: dm.input, color: dm.muted }}
+                      >
+                        <PlatformIcon id={p.id} size={13} />
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
               <button
-                onClick={() => {
+                disabled={editClientSaving}
+                onClick={async () => {
+                  setEditClientSaving(true);
+                  const { error } = await apiAdminUpdateUser(adminSession?.token || "", editClient.id, {
+                    name: editClient.name,
+                    email: editClient.email,
+                    phoneNumber: editClient.phone,
+                    companyName: editClient.company,
+                    budget: editClient.budget,
+                    platforms: editClient.platforms,
+                  });
+                  setEditClientSaving(false);
+                  if (error) {
+                    toast.error("Update failed: " + error);
+                    return;
+                  }
                   setClients((cs) => cs.map((c) => c.id === editClient.id ? editClient : c));
                   setEditClient(null);
                   toast.success("Client updated!");
                 }}
-                style={{ flex: 1, padding: "10px", borderRadius: 10, background: "linear-gradient(135deg, #3b82f6, #2563eb)", color: "white", border: "none", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
-              >Save Changes</button>
+                style={{ flex: 1, padding: "10px", borderRadius: 10, background: editClientSaving ? "#93c5fd" : "linear-gradient(135deg, #3b82f6, #2563eb)", color: "white", border: "none", fontWeight: 700, fontSize: 14, cursor: editClientSaving ? "not-allowed" : "pointer" }}
+              >{editClientSaving ? "Saving..." : "Save Changes"}</button>
               <button onClick={() => setEditClient(null)} style={{ padding: "10px 20px", borderRadius: 10, background: dm.input, border: `1.5px solid ${dm.borderMd}`, color: dm.inputText, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>Cancel</button>
             </div>
           </div>
@@ -6752,13 +6797,26 @@ const AdminDashboard = () => {
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
               <button
-                onClick={() => {
+                disabled={editMemberSaving}
+                onClick={async () => {
+                  setEditMemberSaving(true);
+                  const { error } = await apiAdminUpdateUser(adminSession?.token || "", editMember.id, {
+                    name: editMember.name,
+                    email: editMember.email,
+                    phoneNumber: editMember.phone,
+                    status: editMember.status,
+                  });
+                  setEditMemberSaving(false);
+                  if (error) {
+                    toast.error("Update failed: " + error);
+                    return;
+                  }
                   setTeam((ts) => ts.map((t) => t.id === editMember.id ? editMember : t));
                   setEditMember(null);
                   toast.success("Member updated!");
                 }}
-                style={{ flex: 1, padding: "10px", borderRadius: 10, background: "linear-gradient(135deg, #33496a, #1e3a5f)", color: "white", border: "none", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
-              >Save Changes</button>
+                style={{ flex: 1, padding: "10px", borderRadius: 10, background: editMemberSaving ? "#93c5fd" : "linear-gradient(135deg, #33496a, #1e3a5f)", color: "white", border: "none", fontWeight: 700, fontSize: 14, cursor: editMemberSaving ? "not-allowed" : "pointer" }}
+              >{editMemberSaving ? "Saving..." : "Save Changes"}</button>
               <button onClick={() => setEditMember(null)} style={{ padding: "10px 20px", borderRadius: 10, background: dm.input, border: `1.5px solid ${dm.borderMd}`, color: dm.inputText, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>Cancel</button>
             </div>
           </div>

@@ -977,6 +977,18 @@ export const apiAdminToggleStatus = (token: string, userId: string) =>
     token
   );
 
+export const apiAdminUpdateUser = (
+  token: string,
+  userId: string,
+  body: Record<string, unknown>
+) =>
+  authRequest<{ message?: string; msg?: string; data?: unknown; [key: string]: unknown }>(
+    `/api/admin/users/${userId}`,
+    "PATCH",
+    token,
+    body
+  );
+
 export const apiAdminChangeUserPassword = (
   token: string,
   userId: string,
