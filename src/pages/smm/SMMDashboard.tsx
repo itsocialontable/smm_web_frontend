@@ -11575,6 +11575,7 @@ import {
   apiSMMApproveRejectProject, apiSMMRequestRevision,
   apiSMMGetComments, apiSMMAddComment,
   apiSMMGetClients, apiSMMGetGraphicDesigners,
+  apiGetNotifications, apiMarkNotificationRead,
   type Post, type OverviewRes,
 } from "@/lib/api";
 import {
@@ -11583,22 +11584,12 @@ import {
 } from "recharts";
 
 // ─── Keys ─────────────────────────────────────────────────────────────────────
-const GD_TASKS_KEY  = "socialflow_gd_tasks";
 const DARK_MODE_KEY = "socialflow_dark_mode";
 const NOTIF_KEY     = "socialflow_notifications";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type TaskStatus = "pending" | "in_progress" | "revision" | "completed";
-type Priority   = "high" | "medium" | "low";
 type NotifType  = "success" | "warning" | "error" | "info";
 type SMMView    = "overview"|"compose"|"queue"|"drafts"|"published"|"calendar"|"gd_tasks"|"design_projects"|"analytics"|"channels"|"clients_gd";
-
-interface GDTask {
-  id: string; title: string; description: string; clientName: string;
-  gdName: string;
-  platform: string; deadline: string; priority: Priority; status: TaskStatus;
-  assignedBy: string; assignedAt: string; notes?: string; revisionComment?: string;
-}
 
 interface DesignProject {
   _id?: string; id?: string;
@@ -11740,9 +11731,18 @@ const SMMDashboard = () => {
     setNotifs(prev => saveNotifs([n, ...prev]));
   }, [saveNotifs]);
 
-  const markAllRead = () => setNotifs(prev => saveNotifs(prev.map(n => ({ ...n, read: true }))));
+  const markAllRead = () => {
+    setNotifs(prev => {
+      prev.filter(n => !n.read && n.id.startsWith("b_"))
+        .forEach(n => { apiMarkNotificationRead(token, n.id.slice(2)).catch(() => {}); });
+      return saveNotifs(prev.map(n => ({ ...n, read: true })));
+    });
+  };
   const clearNotifs = () => { setNotifs([]); localStorage.removeItem(NOTIF_KEY); };
-  const deleteNotif = (id: string) => setNotifs(prev => saveNotifs(prev.filter(n => n.id !== id)));
+  const deleteNotif = (id: string) => {
+    if (id.startsWith("b_")) apiMarkNotificationRead(token, id.slice(2)).catch(() => {});
+    setNotifs(prev => saveNotifs(prev.filter(n => n.id !== id)));
+  };
   const unreadCount = notifs.filter(n => !n.read).length;
 
   useEffect(() => {
@@ -11854,18 +11854,19 @@ const SMMDashboard = () => {
   const [youtubePrivacy, setYoutubePrivacy] = useState<"public"|"private"|"unlisted">("public");
   const [isVideoFile,    setIsVideoFile]    = useState(false);
 
-  // GD Tasks (local storage based)
-  const [gdTasks, setGdTasks]           = useState<GDTask[]>([]);
-  const completedGDCount = gdTasks.filter(t => t.status === "completed").length;
-  const totalBadgeCount = (notifs.filter(n => !n.read).length) + completedGDCount;
+  // GD Tasks — ab ye seedha real backend Design Projects (designProjects state) se
+  // aata hai, koi localStorage/fake data nahi. "Assign Task" = ek naya Design
+  // Project backend par create karna, jo turant GD ke real dashboard par dikh
+  // jaata hai (kyunki GD dashboard bhi isi backend se data leta hai).
+  const reviewProjects = designProjects.filter(p => p.status === "Under Review");
+  const totalBadgeCount = (notifs.filter(n => !n.read).length) + reviewProjects.length;
   const [showAddTask, setShowAddTask]   = useState(false);
   const [newTask, setNewTask] = useState({
-    title:"", description:"", clientName:"", gdName:"",
-    platform:"Instagram", deadline:"", priority:"medium" as Priority, notes:"",
+    title:"", description:"", clientId:"", designerId:"",
+    platform:"Instagram", deadline:"", priority:"Medium", notes:"",
   });
 
   const [calMonth, setCalMonth] = useState(new Date());
-  const prevGDTasksRef = useRef<GDTask[]>([]);
 
   // Connecting channel state per client
   const [connectingForClient, setConnectingForClient] = useState<string|null>(null);
@@ -11889,34 +11890,53 @@ const SMMDashboard = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Watch for GD tasks becoming completed → push notification
+  // ── Real backend notifications (agency ke liye — jab GD task submit/complete
+  // kare, revision de, etc. backend yahan se hi notify karta hai) ────────────
+  const loadBackendNotifs = useCallback(async () => {
+    if (!token) return;
+    const { data } = await apiGetNotifications(token, 1, 20);
+    if (!data) return;
+    const raw = (data as any)?.data ?? (data as any)?.notifications ?? [];
+    const list = Array.isArray(raw) ? raw : [];
+    const mapped: AppNotif[] = list.map((n: any) => {
+      const lower = `${n.title ?? ""} ${n.message ?? ""}`.toLowerCase();
+      const needsReview = lower.includes("review") || lower.includes("submit") || lower.includes("complete");
+      return {
+        id: `b_${n._id}`,
+        type: (String(n.type ?? "info").toLowerCase() as NotifType),
+        title: n.title ?? "Notification",
+        message: n.message ?? "",
+        timestamp: n.createdAt ?? new Date().toISOString(),
+        read: !!n.read,
+        action: needsReview ? { label: "Review Now", view: "gd_tasks" as SMMView } : undefined,
+      };
+    });
+    setNotifs(prev => {
+      const localOnly = prev.filter(p => !p.id.startsWith("b_"));
+      const merged = [...mapped, ...localOnly].sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+      return saveNotifs(merged);
+    });
+  }, [token, saveNotifs]);
+
   useEffect(() => {
-    const prev = prevGDTasksRef.current;
-    if (prev.length > 0) {
-      gdTasks.forEach(task => {
-        const prevTask = prev.find(t => t.id === task.id);
-        if (prevTask && prevTask.status !== "completed" && task.status === "completed") {
-          pushNotif(mkNotif("info", "GD Task Completed! 🎨",
-            `"${task.title}" by ${task.gdName} is ready for review`,
-            { label: "Review Now", view: "gd_tasks" }));
-        }
-      });
-    }
-    prevGDTasksRef.current = gdTasks;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gdTasks]);
+    if (!token) return;
+    loadBackendNotifs();
+    const iv = setInterval(loadBackendNotifs, 20000);
+    return () => clearInterval(iv);
+  }, [token, loadBackendNotifs]);
 
   // ── Init ────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const name = localStorage.getItem("socialflow_user_name") || "SMM Executive";
     setUserName(name);
-    const stored = localStorage.getItem(GD_TASKS_KEY);
-    if (stored) setGdTasks(JSON.parse(stored));
     if (token) {
       loadOverview();
       loadPosts();
       loadSMMDashboard();
       loadUsersForDropdowns();
+      loadDesignProjects(); // GD Tasks tab counts/badge ke liye turant chahiye
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
@@ -11931,6 +11951,7 @@ const SMMDashboard = () => {
     if (view === "calendar")        loadPosts();
     if (view === "channels")        { loadChannels(); loadClientsWithChannels(); }
     if (view === "design_projects") loadDesignProjects();
+    if (view === "gd_tasks")        loadDesignProjects();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
@@ -12533,54 +12554,44 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
     setCommentSending(false);
   };
 
-  const handleAssignTask = (e:React.FormEvent) => {
+  // "Assign Task to GD" ab seedha backend par ek real Design Project banata hai
+  // (designerId ke saath) — isliye ye turant GD ke asli dashboard (/api/gd/projects)
+  // par task ke roop mein dikhega, sirf koi local/fake list nahi.
+  const handleAssignTask = async (e:React.FormEvent) => {
     e.preventDefault();
-    if(!newTask.title||!newTask.clientName||!newTask.deadline){toast.error("Please fill all required fields");return;}
-    const task:GDTask={
-      id:"T"+Date.now().toString().slice(-6), ...newTask,
-      status:"pending", assignedBy:`${userName} (SMM)`,
-      assignedAt:new Date().toISOString().split("T")[0],
-    };
-    const upd=[task,...gdTasks];
-    setGdTasks(upd);
-    localStorage.setItem(GD_TASKS_KEY,JSON.stringify(upd));
+    if(!newTask.title||!newTask.clientId||!newTask.designerId||!newTask.deadline){
+      toast.error("Please fill all required fields"); return;
+    }
+    setDpSaving(true);
+    const description =
+      `Platform: ${newTask.platform}` +
+      (newTask.description ? `\n\n${newTask.description}` : "") +
+      (newTask.notes ? `\n\nNotes for Designer: ${newTask.notes}` : "");
+    const {error} = await apiSMMCreateDesignProject(token, {
+      clientId: newTask.clientId,
+      designerId: newTask.designerId,
+      title: newTask.title,
+      designType: "Social Post",
+      deadline: newTask.deadline,
+      priority: newTask.priority,
+      description,
+    });
+    setDpSaving(false);
+    if(error){ toast.error("Task assign failed: "+error); return; }
+    toast.success("Task assigned! GD ke dashboard par turant show hoga.");
+    pushNotif(mkNotif("success","Task Assigned",`"${newTask.title}" assigned to designer`,{label:"GD Tasks",view:"gd_tasks"}));
     setShowAddTask(false);
-    setNewTask({title:"",description:"",clientName:"",gdName:"",platform:"Instagram",deadline:"",priority:"medium",notes:""});
-    toast.success("Task assigned!");
-    pushNotif(mkNotif("success","Task Assigned",`"${task.title}" assigned to designer`,{label:"GD Tasks",view:"gd_tasks"}));
-  };
-
-  const handleRevision = (tid:string, comment:string) => {
-    const upd=gdTasks.map(t=>t.id===tid?{...t,status:"revision" as TaskStatus,revisionComment:comment}:t);
-    setGdTasks(upd); localStorage.setItem(GD_TASKS_KEY,JSON.stringify(upd));
-    toast.success("Revision request sent");
-    pushNotif(mkNotif("info","Revision Requested","Revision requested for GD task",{label:"GD Tasks",view:"gd_tasks"}));
-  };
-
-  const handleGDTaskApproveReject = (taskId: string, action: "approve"|"reject") => {
-    const upd = gdTasks.map(t =>
-      t.id === taskId
-        ? { ...t, status: (action === "approve" ? "completed" : "revision") as TaskStatus }
-        : t
-    );
-    setGdTasks(upd);
-    localStorage.setItem(GD_TASKS_KEY, JSON.stringify(upd));
-    toast.success(action === "approve" ? "Task approved!" : "Task sent for revision!");
-    pushNotif(mkNotif(
-      action === "approve" ? "success" : "warning",
-      action === "approve" ? "Task Approved ✅" : "Task Rejected",
-      action === "approve" ? "GD task approved and marked complete" : "GD task sent back for revision",
-      { label: "GD Tasks", view: "gd_tasks" }
-    ));
-    setNotifOpen(false);
+    setNewTask({title:"",description:"",clientId:"",designerId:"",platform:"Instagram",deadline:"",priority:"Medium",notes:""});
+    loadDesignProjects();
   };
 
   // ── Computed ─────────────────────────────────────────────────────────────────
+  // GD Tasks tab ke stat cards — real design-project statuses se derive hote hain
   const taskCounts = {
-    pending:     gdTasks.filter(t=>t.status==="pending").length,
-    in_progress: gdTasks.filter(t=>t.status==="in_progress").length,
-    revision:    gdTasks.filter(t=>t.status==="revision").length,
-    completed:   gdTasks.filter(t=>t.status==="completed").length,
+    pending:     designProjects.filter(p=>p.status==="Pending").length,
+    in_progress: designProjects.filter(p=>p.status==="In Progress").length,
+    revision:    designProjects.filter(p=>p.status==="Revision").length,
+    completed:   designProjects.filter(p=>p.status==="Completed").length,
   };
 
   const calDays = (() => {
@@ -12790,7 +12801,7 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                         className={`flex-1 px-3 py-2 text-xs font-medium transition ${notifTab===1?"border-b-2 border-orange-500 text-orange-600":"smm-text-muted hover:smm-text-primary"}`}
                         onClick={()=>setNotifTab(1)}
                       >
-                        GD Tasks Done {completedGDCount>0&&<span className="ml-1 bg-orange-500 text-white text-[9px] px-1 py-0.5 rounded-full">{completedGDCount}</span>}
+                        Pending Review {reviewProjects.length>0&&<span className="ml-1 bg-orange-500 text-white text-[9px] px-1 py-0.5 rounded-full">{reviewProjects.length}</span>}
                       </button>
                     </div>
                     <div className="max-h-[400px] overflow-y-auto">
@@ -12821,38 +12832,47 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                           </div>
                         ))
                       ):(
-                        completedGDCount===0?(
+                        reviewProjects.length===0?(
                           <div className="px-4 py-8 text-center smm-text-muted">
                             <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-30"/>
-                            <p className="text-sm">No completed GD tasks pending review</p>
+                            <p className="text-sm">No projects pending your review</p>
                           </div>
-                        ):gdTasks.filter(t=>t.status==="completed").map(task=>(
-                          <div key={task.id} className="px-4 py-4 border-b last:border-b-0 smm-border bg-orange-50/50 dark:bg-orange-900/10">
-                            <div className="flex items-start justify-between gap-2 mb-2">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-bold smm-text-primary leading-tight flex items-center gap-1">
-                                  <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0"/>
-                                  {task.title}
-                                </p>
-                                <p className="text-[11px] smm-text-muted mt-0.5">Designer: <strong>{task.gdName}</strong></p>
-                                <p className="text-[11px] smm-text-muted">Client: <strong>{task.clientName}</strong></p>
-                                <p className="text-[11px] smm-text-muted">Platform: {task.platform} · Due: {task.deadline}</p>
-                                {task.description&&<p className="text-[11px] smm-text-muted mt-1 line-clamp-2 italic">{task.description}</p>}
+                        ):reviewProjects.map(p=>{
+                          const pid=p._id??p.id??"";
+                          const clientName=typeof p.clientId==="object"?p.clientId?.name:clientList.find(c=>c.id===p.clientId)?.name??"—";
+                          const designerName=typeof p.designerId==="object"?p.designerId?.name:gdList.find(g=>g.id===p.designerId)?.name??"—";
+                          return(
+                            <div key={pid} className="px-4 py-4 border-b last:border-b-0 smm-border bg-orange-50/50 dark:bg-orange-900/10">
+                              <div className="flex items-start justify-between gap-2 mb-2">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-bold smm-text-primary leading-tight flex items-center gap-1">
+                                    <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0"/>
+                                    {p.title}
+                                  </p>
+                                  <p className="text-[11px] smm-text-muted mt-0.5">Designer: <strong>{designerName}</strong></p>
+                                  <p className="text-[11px] smm-text-muted">Client: <strong>{clientName}</strong></p>
+                                  <p className="text-[11px] smm-text-muted">Type: {p.designType} · Due: {p.deadline?.slice(0,10)}</p>
+                                  {p.description&&<p className="text-[11px] smm-text-muted mt-1 line-clamp-2 italic">{p.description}</p>}
+                                </div>
+                                <span className="text-[10px] bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 px-2 py-0.5 rounded-full font-medium shrink-0">Under Review</span>
                               </div>
-                              <span className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 px-2 py-0.5 rounded-full font-medium shrink-0">Done</span>
+                              <div className="flex gap-2 mt-2">
+                                <button
+                                  onClick={()=>handleApproveReject(pid,"approve")}
+                                  className="flex-1 flex items-center justify-center gap-1 text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md font-medium transition"
+                                ><CheckCircle2 className="w-3 h-3"/>Approve</button>
+                                <button
+                                  onClick={()=>handleRevisionReq(pid)}
+                                  className="flex-1 flex items-center justify-center gap-1 text-xs border border-orange-300 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 px-3 py-1.5 rounded-md font-medium transition"
+                                >Revision</button>
+                                <button
+                                  onClick={()=>handleApproveReject(pid,"reject")}
+                                  className="flex-1 flex items-center justify-center gap-1 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 px-3 py-1.5 rounded-md font-medium transition"
+                                ><X className="w-3 h-3"/>Reject</button>
+                              </div>
                             </div>
-                            <div className="flex gap-2 mt-2">
-                              <button
-                                onClick={()=>handleGDTaskApproveReject(task.id,"approve")}
-                                className="flex-1 flex items-center justify-center gap-1 text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md font-medium transition"
-                              ><CheckCircle2 className="w-3 h-3"/>Approve</button>
-                              <button
-                                onClick={()=>handleGDTaskApproveReject(task.id,"reject")}
-                                className="flex-1 flex items-center justify-center gap-1 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 px-3 py-1.5 rounded-md font-medium transition"
-                              ><X className="w-3 h-3"/>Reject</button>
-                            </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </div>
@@ -13764,57 +13784,76 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                   </Card>
                 ))}
               </div>
-              {gdTasks.length===0?(
+              {designLoading?(
+                <div className="flex items-center gap-2 smm-text-muted py-8 justify-center"><Loader2 className="w-5 h-5 animate-spin"/>Loading...</div>
+              ):designProjects.length===0?(
                 <Card className="smm-card p-12 text-center">
                   <FileImage className="w-12 h-12 text-slate-300 mx-auto mb-3"/>
                   <p className="smm-text-secondary">No tasks yet. Click "Assign Task to GD" to get started.</p>
                 </Card>
               ):(
                 <div className="space-y-3">
-                  {gdTasks.map(task=>(
-                    <Card key={task.id} className="smm-card p-5">
-                      <div className="flex items-start justify-between gap-4 flex-wrap">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <h3 className="font-semibold smm-text-primary">{task.title}</h3>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${task.status==="completed"?"bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300":task.status==="revision"?"bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300":task.status==="in_progress"?"bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300":"bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300"}`}>
-                              {task.status.replace("_"," ")}
-                            </span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${task.priority==="high"?"bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300":task.priority==="medium"?"bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300":"bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"}`}>
-                              {task.priority}
-                            </span>
-                          </div>
-                          <p className="text-sm smm-text-muted mb-2">{task.description}</p>
-                          <div className="flex items-center gap-4 text-xs smm-text-muted flex-wrap">
-                            <span>Client: <strong className="smm-text-secondary">{task.clientName}</strong></span>
-                            {task.gdName&&<span>Designer: <strong className="smm-text-secondary">{task.gdName}</strong></span>}
-                            <span>Platform: <strong className="smm-text-secondary">{task.platform}</strong></span>
-                            <span>Due: <strong className="smm-text-secondary">{task.deadline}</strong></span>
-                          </div>
-                          {task.status==="revision"&&task.revisionComment&&(
-                            <div className="mt-2 text-xs bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 px-3 py-2 rounded-lg border border-orange-100 dark:border-orange-800">
-                              Revision note: {task.revisionComment}
+                  {designProjects.map(p=>{
+                    const pid=p._id??p.id??"";
+                    const clientName=typeof p.clientId==="object"?p.clientId?.name:clientList.find(c=>c.id===p.clientId)?.name??"—";
+                    const designerName=typeof p.designerId==="object"?p.designerId?.name:gdList.find(g=>g.id===p.designerId)?.name??"—";
+                    const sc:Record<string,string>={
+                      "Pending":"bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300",
+                      "In Progress":"bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+                      "Under Review":"bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+                      "Revision":"bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+                      "Completed":"bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+                      "Cancelled":"bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+                    };
+                    const pc:Record<string,string>={
+                      "Urgent":"bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+                      "High":"bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+                      "Medium":"bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
+                      "Low":"bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+                    };
+                    return(
+                      <Card key={pid} className="smm-card p-5">
+                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                              <h3 className="font-semibold smm-text-primary">{p.title}</h3>
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${sc[p.status]??"bg-slate-100 text-slate-600"}`}>
+                                {p.status}
+                              </span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${pc[p.priority]??"bg-slate-100 text-slate-600"}`}>
+                                {p.priority}
+                              </span>
                             </div>
-                          )}
-                        </div>
-                        {task.status==="completed"&&(
-                          <div className="flex flex-col gap-2">
-                            <Button size="sm" variant="outline" className="text-xs text-orange-600 border-orange-200 hover:bg-orange-50 dark:hover:bg-orange-900/20"
-                              onClick={()=>{const c=prompt("Revision comment:");if(c)handleRevision(task.id,c);}}>
-                              Request Revision
-                            </Button>
-                            <Button size="sm" className="text-xs bg-green-600 hover:bg-green-700" onClick={()=>handleGDTaskApproveReject(task.id,"approve")}>
-                              <CheckCircle2 className="w-3 h-3 mr-1"/>Approve
-                            </Button>
-                            <Button size="sm" variant="outline" className="text-xs text-red-500 border-red-200 hover:bg-red-50 dark:hover:bg-red-900/20"
-                              onClick={()=>handleGDTaskApproveReject(task.id,"reject")}>
-                              Reject
-                            </Button>
+                            {p.description&&<p className="text-sm smm-text-muted mb-2 whitespace-pre-line line-clamp-3">{p.description}</p>}
+                            <div className="flex items-center gap-4 text-xs smm-text-muted flex-wrap">
+                              <span>Client: <strong className="smm-text-secondary">{clientName}</strong></span>
+                              <span>Designer: <strong className="smm-text-secondary">{designerName}</strong></span>
+                              <span>Type: <strong className="smm-text-secondary">{p.designType}</strong></span>
+                              <span>Due: <strong className="smm-text-secondary">{p.deadline?.slice(0,10)}</strong></span>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    </Card>
-                  ))}
+                          <div className="flex flex-col gap-2 shrink-0">
+                            <Button size="sm" variant="outline" onClick={()=>openProjectDetail(p)} className="smm-btn-outline">
+                              <MessageSquare className="w-4 h-4 mr-1"/>Comments
+                            </Button>
+                            {p.status==="Under Review"&&(
+                              <>
+                                <Button size="sm" className="text-xs bg-green-600 hover:bg-green-700" onClick={()=>handleApproveReject(pid,"approve")}>
+                                  <CheckCircle2 className="w-3 h-3 mr-1"/>Approve
+                                </Button>
+                                <Button size="sm" variant="outline" className="text-xs text-orange-600 border-orange-200 hover:bg-orange-50 dark:hover:bg-orange-900/20" onClick={()=>handleRevisionReq(pid)}>
+                                  Revision
+                                </Button>
+                                <Button size="sm" variant="outline" className="text-xs text-red-500 border-red-200 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={()=>handleApproveReject(pid,"reject")}>
+                                  Reject
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -14102,27 +14141,19 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="smm-text-primary">Client *</Label>
-                  {clientList.length>0?(
-                    <select value={newTask.clientName} onChange={e=>setNewTask(n=>({...n,clientName:e.target.value}))}
-                      className="smm-select mt-1 w-full px-3 py-2 text-sm border smm-border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" required>
-                      <option value="">-- Select Client --</option>
-                      {clientList.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
-                    </select>
-                  ):(
-                    <Input value={newTask.clientName} onChange={e=>setNewTask(n=>({...n,clientName:e.target.value}))} placeholder="Client name" required className="smm-input mt-1"/>
-                  )}
+                  <select value={newTask.clientId} onChange={e=>setNewTask(n=>({...n,clientId:e.target.value}))}
+                    className="smm-select mt-1 w-full px-3 py-2 text-sm border smm-border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" required>
+                    <option value="">-- Select Client --</option>
+                    {clientList.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
                 </div>
                 <div>
-                  <Label className="smm-text-primary">Graphic Designer</Label>
-                  {gdList.length>0?(
-                    <select value={newTask.gdName} onChange={e=>setNewTask(n=>({...n,gdName:e.target.value}))}
-                      className="smm-select mt-1 w-full px-3 py-2 text-sm border smm-border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500">
-                      <option value="">-- Select Designer --</option>
-                      {gdList.map(g=><option key={g.id} value={g.name}>{g.name}</option>)}
-                    </select>
-                  ):(
-                    <Input value={newTask.gdName} onChange={e=>setNewTask(n=>({...n,gdName:e.target.value}))} placeholder="Designer name" className="smm-input mt-1"/>
-                  )}
+                  <Label className="smm-text-primary">Graphic Designer *</Label>
+                  <select value={newTask.designerId} onChange={e=>setNewTask(n=>({...n,designerId:e.target.value}))}
+                    className="smm-select mt-1 w-full px-3 py-2 text-sm border smm-border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" required>
+                    <option value="">-- Select Designer --</option>
+                    {gdList.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -14137,11 +14168,12 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                 </div>
                 <div>
                   <Label className="smm-text-primary">Priority</Label>
-                  <select value={newTask.priority} onChange={e=>setNewTask(n=>({...n,priority:e.target.value as Priority}))}
+                  <select value={newTask.priority} onChange={e=>setNewTask(n=>({...n,priority:e.target.value}))}
                     className="smm-select mt-1 w-full px-3 py-2 text-sm border smm-border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500">
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Urgent">Urgent</option>
                   </select>
                 </div>
               </div>
@@ -14157,7 +14189,9 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
               </div>
               <div className="flex gap-3 pt-2">
                 <Button type="button" variant="outline" className="flex-1 smm-btn-outline" onClick={()=>setShowAddTask(false)}>Cancel</Button>
-                <Button type="submit" className="flex-1 bg-green-600 hover:bg-green-700"><Send className="w-4 h-4 mr-2"/>Assign Task</Button>
+                <Button type="submit" className="flex-1 bg-green-600 hover:bg-green-700" disabled={dpSaving}>
+                  {dpSaving&&<Loader2 className="w-4 h-4 mr-2 animate-spin"/>}<Send className="w-4 h-4 mr-2"/>Assign Task
+                </Button>
               </div>
             </form>
           </Card>
