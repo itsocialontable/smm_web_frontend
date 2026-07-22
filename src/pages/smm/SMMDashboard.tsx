@@ -11570,7 +11570,7 @@ import {
   apiGetQueuedPosts, apiGetDrafts, apiUpdateDraft, apiDeleteDraft,
   apiPublishPost, apiGetOverview, apiGetSocialAccounts,
   apiGetOAuthUrl, apiDisconnectSocialAccount,
-  apiSMMDashboard, apiSMMGetDesignProjects, apiSMMCreateDesignProject,
+  apiSMMDashboard, apiSMMGetDesignProjects, apiSMMGetDesignProject, apiSMMCreateDesignProject,
   apiSMMApproveRejectProject, apiSMMRequestRevision,
   apiSMMGetComments, apiSMMAddComment,
   apiSMMGetClients, apiSMMGetGraphicDesigners,
@@ -11773,6 +11773,7 @@ const SMMDashboard = () => {
   const [designLoading,  setDesignLoading]    = useState(false);
   const [dpSaving, setDpSaving]               = useState(false);
   const [selProject, setSelProject]           = useState<DesignProject | null>(null);
+  const [projFiles, setProjFiles]             = useState<any[]>([]);
   const [projComments, setProjComments]       = useState<any[]>([]);
   const [newComment, setNewComment]           = useState("");
   const [commentSending, setCommentSending]   = useState(false);
@@ -12503,6 +12504,9 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
     else{toast.success("Revision request sent!");pushNotif(mkNotif("info","Revision Requested","Revision request sent to designer",{label:"View Projects",view:"gd_tasks"}));loadDesignProjects();}
   };
 
+  // Comments ke saath-saath GD ne jo Draft/Final files upload ki hain wo bhi
+  // yahan fetch karte hain — pehle sirf comments load hote the, isliye SMM ko
+  // uploaded file kabhi dikhti hi nahi thi approve/reject se pehle.
   const openProjectDetail = async (project:DesignProject) => {
     setSelProject(project);
     const pid=project._id??project.id??"";
@@ -12510,6 +12514,11 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
     const raw=data as any;
     const list=raw?.data??raw?.comments??[];
     setProjComments(Array.isArray(list)?list:[]);
+
+    const {data:detailData}=await apiSMMGetDesignProject(token,pid);
+    const dd=detailData as any;
+    const files=dd?.files??dd?.data?.files??dd?.project?.designFiles??[];
+    setProjFiles(Array.isArray(files)?files:[]);
   };
 
   const handleSendComment = async () => {
@@ -13876,9 +13885,21 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
           <Card className="smm-modal w-full max-w-lg p-6 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold smm-text-primary truncate">{selProject.title}</h2>
-              <button onClick={()=>{setSelProject(null);setProjComments([]);setNewComment("");}} className="smm-text-muted hover:smm-text-primary shrink-0">
+              <button onClick={()=>{setSelProject(null);setProjComments([]);setProjFiles([]);setNewComment("");}} className="smm-text-muted hover:smm-text-primary shrink-0">
                 <X className="w-5 h-5"/>
               </button>
+            </div>
+            <h3 className="text-sm font-semibold smm-text-primary mb-2">Uploaded Files</h3>
+            <div className="space-y-2 mb-4">
+              {projFiles.length===0?(
+                <p className="text-sm smm-text-muted">Designer ne abhi tak koi file upload nahi ki</p>
+              ):projFiles.map((f:any,i:number)=>(
+                <a key={f._id??i} href={f.fileUrl} target="_blank" rel="noreferrer"
+                  className="flex items-center justify-between gap-2 text-sm smm-comment px-3 py-2 rounded-lg border smm-border hover:opacity-80">
+                  <span className="smm-text-primary font-medium truncate">{f.fileName??`File ${i+1}`}</span>
+                  <span className="text-xs smm-text-muted shrink-0">{f.fileType} · v{f.version}</span>
+                </a>
+              ))}
             </div>
             <h3 className="text-sm font-semibold smm-text-primary mb-2">Comments</h3>
             <div className="space-y-2 mb-4 max-h-48 overflow-y-auto">

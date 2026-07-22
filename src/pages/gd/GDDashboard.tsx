@@ -498,6 +498,31 @@ const GDDashboard = () => {
     setTasks(data?.data?.projects || data?.projects || data?.data || []);
   }, [token, filterStatus, searchQuery]);
 
+  // ── My Uploads — list API sirf task summary deta hai (designFiles nahi hoti),
+  // isliye har task ka pura detail (jisme designFiles hoti hain) alag se fetch
+  // karke uploaded files nikalte hain. Yehi wajah thi ke upload ki hui file
+  // "My Uploads" me nahi dikh rahi thi.
+  const [uploadedFiles, setUploadedFiles] = useState<(DesignFile & { task: Task })[]>([]);
+  const [loadingUploads, setLoadingUploads] = useState(false);
+  const loadAllUploadedFiles = useCallback(async () => {
+    if (!token) return;
+    setLoadingUploads(true);
+    const { data, error } = await gdRequest<any>("/api/gd/projects?limit=100", "GET", token);
+    if (error) { setLoadingUploads(false); toast.error("Files load nahi hue"); return; }
+    const list: Task[] = data?.data?.projects || data?.projects || data?.data || [];
+    const detailResults = await Promise.all(
+      list.map(t => gdRequest<any>(`/api/gd/projects/${t._id}`, "GET", token))
+    );
+    const files: (DesignFile & { task: Task })[] = [];
+    detailResults.forEach(({ data: d }, i) => {
+      const full: Task = d?.data?.project || d?.project || d?.data || list[i];
+      (full.designFiles || []).forEach(f => files.push({ ...f, task: full }));
+    });
+    files.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+    setUploadedFiles(files);
+    setLoadingUploads(false);
+  }, [token]);
+
   // ── Load task detail
   const loadTaskDetail = useCallback(async (taskId: string) => {
     if (!token) return;
@@ -522,8 +547,9 @@ const GDDashboard = () => {
   }, [token, loadStats, loadDeadlines, loadNotifications]);
 
   useEffect(() => {
-    if (token && (view === "tasks" || view === "uploads" || view === "my_uploads")) loadTasks();
-  }, [token, view, filterStatus, searchQuery, loadTasks]);
+    if (token && (view === "tasks" || view === "uploads")) loadTasks();
+    if (token && view === "my_uploads") loadAllUploadedFiles();
+  }, [token, view, filterStatus, searchQuery, loadTasks, loadAllUploadedFiles]);
 
   useEffect(() => {
     if (selectedTask?._id) loadTaskDetail(selectedTask._id);
@@ -1101,9 +1127,7 @@ const GDDashboard = () => {
 
           {/* ═══════════════ MY UPLOADS VIEW ═══════════════ */}
           {view === "my_uploads" && (() => {
-            const allFiles = tasks
-              .flatMap(t => (t.designFiles || []).map(f => ({ ...f, task: t })))
-              .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+            const allFiles = uploadedFiles;
             const isImage = (name: string) => /\.(png|jpe?g|gif|webp|svg)$/i.test(name);
             const isVideo = (name: string) => /\.(mp4|mov|webm|avi|mkv)$/i.test(name);
             return (
@@ -1119,11 +1143,11 @@ const GDDashboard = () => {
                       <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>Uploaded Files</div>
                       <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 1 }}>Sab tasks ki uploaded Draft/Final files, latest sabse upar</div>
                     </div>
-                    <button onClick={loadTasks} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "white", cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: "#64748b" }}>
+                    <button onClick={loadAllUploadedFiles} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "white", cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: "#64748b" }}>
                       <RefreshCw size={13} /> Refresh
                     </button>
                   </div>
-                  {loadingTasks ? (
+                  {loadingUploads ? (
                     <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}><Loader2 size={24} className="animate-spin" /></div>
                   ) : allFiles.length === 0 ? (
                     <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
@@ -1183,6 +1207,7 @@ const GDDashboard = () => {
             loadStats();
             if (selectedTask?._id === uploadTask._id) loadTaskDetail(uploadTask._id);
             loadTasks();
+            loadAllUploadedFiles();
           }}
         />
       )}
