@@ -11571,7 +11571,6 @@ import {
   apiPublishPost, apiGetOverview, apiGetSocialAccounts,
   apiGetOAuthUrl, apiDisconnectSocialAccount,
   apiSMMDashboard, apiSMMGetDesignProjects, apiSMMCreateDesignProject,
-  apiSMMDeleteDesignProject,
   apiSMMApproveRejectProject, apiSMMRequestRevision,
   apiSMMGetComments, apiSMMAddComment,
   apiSMMGetClients, apiSMMGetGraphicDesigners,
@@ -11589,7 +11588,7 @@ const NOTIF_KEY     = "socialflow_notifications";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type NotifType  = "success" | "warning" | "error" | "info";
-type SMMView    = "overview"|"compose"|"queue"|"drafts"|"published"|"calendar"|"gd_tasks"|"design_projects"|"analytics"|"channels"|"clients_gd";
+type SMMView    = "overview"|"compose"|"queue"|"drafts"|"published"|"calendar"|"gd_tasks"|"analytics"|"channels"|"clients_gd";
 
 interface DesignProject {
   _id?: string; id?: string;
@@ -11772,13 +11771,6 @@ const SMMDashboard = () => {
 
   const [designProjects, setDesignProjects]   = useState<DesignProject[]>([]);
   const [designLoading,  setDesignLoading]    = useState(false);
-  const [showAddDesign,  setShowAddDesign]    = useState(false);
-  const [designFilter,   setDesignFilter]    = useState("");
-  const [newDP, setNewDP] = useState({
-    clientId:"", designerId:"", title:"", designType:"Social Post",
-    deadline:"", priority:"Medium", description:"",
-    targetAudience:"", brandColors:"", fontPreferences:"", revisionLimit:3,
-  });
   const [dpSaving, setDpSaving]               = useState(false);
   const [selProject, setSelProject]           = useState<DesignProject | null>(null);
   const [projComments, setProjComments]       = useState<any[]>([]);
@@ -11858,22 +11850,7 @@ const SMMDashboard = () => {
   // aata hai, koi localStorage/fake data nahi. "Assign Task" = ek naya Design
   // Project backend par create karna, jo turant GD ke real dashboard par dikh
   // jaata hai (kyunki GD dashboard bhi isi backend se data leta hai).
-  // Ek Design Project ko GD ko tab tak "assigned" nahi maana jaata jab tak
-  // usme designerId set na ho. Design Project (client details) add karne se
-  // GD ko turant koi task nahi milta — wo sirf future record hota hai.
-  // Sirf "Assign Task to GD" flow se hi designerId set hota hai aur GD ke
-  // dashboard par task dikhta hai. Isi wajah se dono lists (Design Projects
-  // tab aur GD Tasks tab) ko yahan pura alag rakha gaya hai — ek saath mix
-  // nahi hote.
-  const hasDesignerAssigned = (p: DesignProject) =>
-    !!(typeof p.designerId === "object" ? p.designerId?._id : p.designerId);
-
-  // GD Tasks tab — sirf wahi design-projects jinme designer assign ho chuka hai
-  const gdTaskProjects = designProjects.filter(hasDesignerAssigned);
-  // Design Projects tab — sirf wahi jo abhi tak kisi GD ko assign nahi hue (future record)
-  const futureDesignProjects = designProjects.filter(p => !hasDesignerAssigned(p));
-
-  const reviewProjects = gdTaskProjects.filter(p => p.status === "Under Review");
+  const reviewProjects = designProjects.filter(p => p.status === "Under Review");
   const totalBadgeCount = (notifs.filter(n => !n.read).length) + reviewProjects.length;
   const [showAddTask, setShowAddTask]   = useState(false);
   const [newTask, setNewTask] = useState({
@@ -11965,7 +11942,6 @@ const SMMDashboard = () => {
     if (view === "analytics")       loadAnalytics();
     if (view === "calendar")        loadPosts();
     if (view === "channels")        { loadChannels(); loadClientsWithChannels(); }
-    if (view === "design_projects") loadDesignProjects();
     if (view === "gd_tasks")        loadDesignProjects();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
@@ -12197,7 +12173,7 @@ const loadClientsWithChannels = async () => {
 
   const loadDesignProjects = async () => {
     setDesignLoading(true);
-    const { data, error } = await apiSMMGetDesignProjects(token, designFilter ? {status:designFilter} : undefined);
+    const { data, error } = await apiSMMGetDesignProjects(token);
     if (error) { toast.error("Load failed: "+error); pushNotif(mkNotif("error","Projects Load Failed",error)); }
     else {
       const raw=data as any;
@@ -12507,35 +12483,6 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
     setDiscId(null);
   };
 
-  // "New Design Project" — sirf client ke project ki details save karta hai
-  // (future record ke liye). Is step par koi GD select nahi hota, isliye
-  // designerId backend ko bhejta hi nahi (apiSMMCreateDesignProject empty
-  // string fields ko FormData me include hi nahi karta) — matlab kisi bhi
-  // designer ko turant koi task assign nahi hoga. Task baad me alag se
-  // "GD Tasks" tab se "Assign Task to GD" karke diya jaata hai.
-  const handleCreateDP = async (e:React.FormEvent) => {
-    e.preventDefault();
-    if(!newDP.clientId||!newDP.title||!newDP.deadline){toast.error("Please fill all required fields");return;}
-    setDpSaving(true);
-    const {error}=await apiSMMCreateDesignProject(token,{...newDP,designerId:""});
-    if(error) toast.error("Create failed: "+error);
-    else{
-      toast.success("Design project added!");
-      pushNotif(mkNotif("success","Design Project Added",`"${newDP.title}" saved — assign it to a GD anytime from GD Tasks`,{label:"View Projects",view:"design_projects"}));
-      setShowAddDesign(false);
-      setNewDP({clientId:"",designerId:"",title:"",designType:"Social Post",deadline:"",priority:"Medium",description:"",targetAudience:"",brandColors:"",fontPreferences:"",revisionLimit:3});
-      loadDesignProjects();
-    }
-    setDpSaving(false);
-  };
-
-  const handleDeleteDP = async (id:string) => {
-    if(!confirm("Are you sure you want to delete this project?")) return;
-    const {error}=await apiSMMDeleteDesignProject(token,id);
-    if(error) toast.error("Delete failed: "+error);
-    else{toast.success("Deleted!");pushNotif(mkNotif("warning","Project Deleted","Design project deleted"));loadDesignProjects();}
-  };
-
   const handleApproveReject = async (id:string, act:"approve"|"reject") => {
     const note=prompt(act==="approve"?"Approval note (optional):":"Rejection reason:");
     if(act==="reject"&&!note) return;
@@ -12543,7 +12490,7 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
     if(error) toast.error("Action failed: "+error);
     else{
       toast.success(act==="approve"?"Approved!":"Rejected!");
-      pushNotif(mkNotif(act==="approve"?"success":"warning",act==="approve"?"Project Approved":"Project Rejected","Design project "+act+"ed",{label:"View Projects",view:"design_projects"}));
+      pushNotif(mkNotif(act==="approve"?"success":"warning",act==="approve"?"Project Approved":"Project Rejected","Design project "+act+"ed",{label:"View Projects",view:"gd_tasks"}));
       loadDesignProjects();
     }
   };
@@ -12553,7 +12500,7 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
     if(!msg) return;
     const {error}=await apiSMMRequestRevision(token,id,msg);
     if(error) toast.error("Revision failed: "+error);
-    else{toast.success("Revision request sent!");pushNotif(mkNotif("info","Revision Requested","Revision request sent to designer",{label:"View Projects",view:"design_projects"}));loadDesignProjects();}
+    else{toast.success("Revision request sent!");pushNotif(mkNotif("info","Revision Requested","Revision request sent to designer",{label:"View Projects",view:"gd_tasks"}));loadDesignProjects();}
   };
 
   const openProjectDetail = async (project:DesignProject) => {
@@ -12609,10 +12556,10 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
   // ── Computed ─────────────────────────────────────────────────────────────────
   // GD Tasks tab ke stat cards — real design-project statuses se derive hote hain
   const taskCounts = {
-    pending:     gdTaskProjects.filter(p=>p.status==="Pending").length,
-    in_progress: gdTaskProjects.filter(p=>p.status==="In Progress").length,
-    revision:    gdTaskProjects.filter(p=>p.status==="Revision").length,
-    completed:   gdTaskProjects.filter(p=>p.status==="Completed").length,
+    pending:     designProjects.filter(p=>p.status==="Pending").length,
+    in_progress: designProjects.filter(p=>p.status==="In Progress").length,
+    revision:    designProjects.filter(p=>p.status==="Revision").length,
+    completed:   designProjects.filter(p=>p.status==="Completed").length,
   };
 
   const calDays = (() => {
@@ -12661,7 +12608,6 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
     {key:"drafts",          icon:FileText,        label:"Drafts"},
     {key:"published",       icon:Globe,           label:"Published"},
     {key:"calendar",        icon:Calendar,        label:"Calendar"},
-    {key:"design_projects", icon:Palette,         label:"Design Projects"},
     {key:"gd_tasks",        icon:FileImage,       label:"GD Tasks"},
     {key:"analytics",       icon:BarChart3,       label:"Analytics"},
     {key:"channels",        icon:LinkIcon,        label:"Channels"},
@@ -12672,7 +12618,7 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
     overview:"SMM Dashboard", compose:editingDraft?"Edit Draft":"Create Post",
     queue:"Queue", drafts:"Drafts", published:"Published",
     calendar:"Content Calendar", gd_tasks:"GD Tasks",
-    design_projects:"Design Projects", analytics:"Analytics", channels:"Channels",
+    analytics:"Analytics", channels:"Channels",
     clients_gd:"Clients & Graphic Designers",
   };
 
@@ -12745,11 +12691,6 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
             {view==="gd_tasks"&&(
               <Button onClick={()=>setShowAddTask(true)} className="bg-green-600 hover:bg-green-700">
                 <Plus className="w-4 h-4 mr-2"/>Assign Task to GD
-              </Button>
-            )}
-            {view==="design_projects"&&(
-              <Button onClick={()=>setShowAddDesign(true)} className="bg-green-600 hover:bg-green-700">
-                <Plus className="w-4 h-4 mr-2"/>New Design Project
               </Button>
             )}
             {view==="queue"&&(
@@ -12928,7 +12869,7 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                       {label:"Overdue",      value:smmDashData.designStats.overdueProjects??0,     border:"border-l-red-400"},
                       {label:"Due Today",    value:smmDashData.designStats.dueTodayProjects??0,    border:"border-l-pink-400"},
                     ].map(s=>(
-                      <Card key={s.label} className={`smm-card p-4 border-l-4 ${s.border} cursor-pointer hover:shadow-md transition`} onClick={()=>setView("design_projects")}>
+                      <Card key={s.label} className={`smm-card p-4 border-l-4 ${s.border} cursor-pointer hover:shadow-md transition`} onClick={()=>setView("gd_tasks")}>
                         <div className="text-2xl font-bold smm-text-primary">{s.value}</div>
                         <div className="text-xs smm-text-muted mt-1">{s.label}</div>
                       </Card>
@@ -13807,14 +13748,14 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
               </div>
               {designLoading?(
                 <div className="flex items-center gap-2 smm-text-muted py-8 justify-center"><Loader2 className="w-5 h-5 animate-spin"/>Loading...</div>
-              ):gdTaskProjects.length===0?(
+              ):designProjects.length===0?(
                 <Card className="smm-card p-12 text-center">
                   <FileImage className="w-12 h-12 text-slate-300 mx-auto mb-3"/>
                   <p className="smm-text-secondary">No tasks yet. Click "Assign Task to GD" to get started.</p>
                 </Card>
               ):(
                 <div className="space-y-3">
-                  {gdTaskProjects.map(p=>{
+                  {designProjects.map(p=>{
                     const pid=p._id??p.id??"";
                     const clientName=typeof p.clientId==="object"?p.clientId?.name:clientList.find(c=>c.id===p.clientId)?.name??"—";
                     const designerName=typeof p.designerId==="object"?p.designerId?.name:gdList.find(g=>g.id===p.designerId)?.name??"—";
@@ -13880,94 +13821,6 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
             </div>
           )}
 
-          {/* ── DESIGN PROJECTS ── */}
-          {view==="design_projects"&&(
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 flex-wrap">
-                <select value={designFilter} onChange={e=>{setDesignFilter(e.target.value);setTimeout(()=>loadDesignProjects(),0);}}
-                  className="smm-select px-3 py-2 text-sm border smm-border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500">
-                  <option value="">All Status</option>
-                  {["Pending","In Progress","Under Review","Revision","Completed","Cancelled"].map(s=>(
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-                <Button size="sm" variant="outline" onClick={loadDesignProjects} disabled={designLoading} className="smm-btn-outline">
-                  <RefreshCw className={`w-4 h-4 mr-1 ${designLoading?"animate-spin":""}`}/>Refresh
-                </Button>
-              </div>
-              {designLoading?(
-                <div className="flex items-center gap-2 smm-text-muted py-8 justify-center"><Loader2 className="w-5 h-5 animate-spin"/>Loading...</div>
-              ):futureDesignProjects.length===0?(
-                <Card className="smm-card p-12 text-center">
-                  <Palette className="w-12 h-12 text-slate-300 mx-auto mb-3"/>
-                  <p className="smm-text-secondary font-medium">No design projects found</p>
-                  <Button className="mt-4 bg-green-600 hover:bg-green-700" onClick={()=>setShowAddDesign(true)}>
-                    <Plus className="w-4 h-4 mr-2"/>New Design Project
-                  </Button>
-                </Card>
-              ):(
-                <div className="space-y-3">
-                  {futureDesignProjects.map(p=>{
-                    const pid=p._id??p.id??"";
-                    const clientName=typeof p.clientId==="object"?p.clientId?.name:clientList.find(c=>c.id===p.clientId)?.name??"—";
-                    const designerName=typeof p.designerId==="object"?p.designerId?.name:gdList.find(g=>g.id===p.designerId)?.name??"—";
-                    const sc:Record<string,string>={
-                      "Pending":"bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
-                      "In Progress":"bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-                      "Under Review":"bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
-                      "Revision":"bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
-                      "Completed":"bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-                      "Cancelled":"bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-                    };
-                    return(
-                      <Card key={pid} className="smm-card p-5">
-                        <div className="flex items-start justify-between gap-4 flex-wrap">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap mb-1">
-                              <h3 className="font-semibold smm-text-primary">{p.title}</h3>
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${sc[p.status]??"bg-slate-100 text-slate-600"}`}>{p.status}</span>
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.priority==="Urgent"?"bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300":p.priority==="High"?"bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300":p.priority==="Medium"?"bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300":"bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"}`}>
-                                {p.priority}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-4 text-xs smm-text-muted flex-wrap mt-1">
-                              <span>Type: <strong className="smm-text-secondary">{p.designType}</strong></span>
-                              <span>Client: <strong className="smm-text-secondary">{clientName}</strong></span>
-                              <span>Designer: <strong className="smm-text-secondary">{designerName}</strong></span>
-                              <span>Deadline: <strong className="smm-text-secondary">{p.deadline?.slice(0,10)}</strong></span>
-                            </div>
-                            {p.description&&<p className="text-sm smm-text-muted mt-1 truncate">{p.description}</p>}
-                          </div>
-                          <div className="flex gap-2 flex-wrap shrink-0">
-                            <Button size="sm" variant="outline" onClick={()=>openProjectDetail(p)} className="smm-btn-outline">
-                              <MessageSquare className="w-4 h-4 mr-1"/>Comments
-                            </Button>
-                            {p.status==="Under Review"&&(
-                              <>
-                                <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={()=>handleApproveReject(pid,"approve")}>
-                                  <CheckCircle2 className="w-4 h-4 mr-1"/>Approve
-                                </Button>
-                                <Button size="sm" variant="outline" className="text-orange-600 border-orange-200 hover:bg-orange-50 dark:hover:bg-orange-900/20" onClick={()=>handleRevisionReq(pid)}>
-                                  Revision
-                                </Button>
-                                <Button size="sm" variant="outline" className="text-red-500 border-red-200 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={()=>handleApproveReject(pid,"reject")}>
-                                  Reject
-                                </Button>
-                              </>
-                            )}
-                            <Button size="sm" variant="outline" className="text-red-500 border-red-200 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={()=>handleDeleteDP(pid)}>
-                              <Trash2 className="w-4 h-4"/>
-                            </Button>
-                          </div>
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* ── ANALYTICS ── */}
           {view==="analytics"&&(
             <div className="space-y-6">
@@ -14018,88 +13871,6 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
         </div>
       </main>
 
-      {/* ── Add Design Project Modal ── */}
-      {showAddDesign&&(
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <Card className="smm-modal w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold smm-text-primary">New Design Project</h2>
-              <button onClick={()=>setShowAddDesign(false)} className="smm-text-muted hover:smm-text-primary"><X className="w-5 h-5"/></button>
-            </div>
-            <form onSubmit={handleCreateDP} className="space-y-4">
-              <div>
-                <Label className="smm-text-primary">Client *</Label>
-                <select value={newDP.clientId} onChange={e=>setNewDP(n=>({...n,clientId:e.target.value}))}
-                  className="smm-select mt-1 w-full px-3 py-2 text-sm border smm-border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" required>
-                  <option value="">-- Select Client --</option>
-                  {clientList.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <p className="text-xs smm-text-muted mt-1">Ye sirf client ka project record save karega. GD ko task baad me "GD Tasks" se alag assign karna hoga.</p>
-              </div>
-              <div>
-                <Label className="smm-text-primary">Project Title *</Label>
-                <Input value={newDP.title} onChange={e=>setNewDP(n=>({...n,title:e.target.value}))}
-                  placeholder="e.g. Logo Design for Sharma Enterprises" required className="smm-input mt-1"/>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <Label className="smm-text-primary">Design Type</Label>
-                  <select value={newDP.designType} onChange={e=>setNewDP(n=>({...n,designType:e.target.value}))}
-                    className="smm-select mt-1 w-full px-3 py-2 text-sm border smm-border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500">
-                    {["Social Post","Logo","Banner","Brochure","Video Thumbnail","Story","Reel Cover","Other"].map(t=>(
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label className="smm-text-primary">Deadline *</Label>
-                  <Input type="date" value={newDP.deadline} onChange={e=>setNewDP(n=>({...n,deadline:e.target.value}))} required className="smm-input mt-1"/>
-                </div>
-                <div>
-                  <Label className="smm-text-primary">Priority</Label>
-                  <select value={newDP.priority} onChange={e=>setNewDP(n=>({...n,priority:e.target.value}))}
-                    className="smm-select mt-1 w-full px-3 py-2 text-sm border smm-border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500">
-                    {["Low","Medium","High","Urgent"].map(p=><option key={p} value={p}>{p}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <Label className="smm-text-primary">Description</Label>
-                <textarea value={newDP.description} onChange={e=>setNewDP(n=>({...n,description:e.target.value}))} rows={3}
-                  className="smm-textarea mt-1 w-full px-3 py-2 text-sm border smm-border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-green-500"/>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="smm-text-primary">Target Audience</Label>
-                  <Input value={newDP.targetAudience} onChange={e=>setNewDP(n=>({...n,targetAudience:e.target.value}))} placeholder="e.g. 25-45 professionals" className="smm-input mt-1"/>
-                </div>
-                <div>
-                  <Label className="smm-text-primary">Revision Limit</Label>
-                  <Input type="number" min={1} max={10} value={newDP.revisionLimit} onChange={e=>setNewDP(n=>({...n,revisionLimit:Number(e.target.value)}))} className="smm-input mt-1"/>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="smm-text-primary">Brand Colors</Label>
-                  <Input value={newDP.brandColors} onChange={e=>setNewDP(n=>({...n,brandColors:e.target.value}))} placeholder="#0044CC, #FFFFFF" className="smm-input mt-1"/>
-                </div>
-                <div>
-                  <Label className="smm-text-primary">Font Preferences</Label>
-                  <Input value={newDP.fontPreferences} onChange={e=>setNewDP(n=>({...n,fontPreferences:e.target.value}))} placeholder="Montserrat Bold" className="smm-input mt-1"/>
-                </div>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <Button type="button" variant="outline" className="flex-1 smm-btn-outline" onClick={()=>setShowAddDesign(false)}>Cancel</Button>
-                <Button type="submit" className="flex-1 bg-green-600 hover:bg-green-700" disabled={dpSaving}>
-                  {dpSaving&&<Loader2 className="w-4 h-4 mr-2 animate-spin"/>}<Send className="w-4 h-4 mr-2"/>Create & Assign
-                </Button>
-              </div>
-            </form>
-          </Card>
-        </div>
-      )}
-
-      {/* ── Comments Modal ── */}
       {selProject&&(
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <Card className="smm-modal w-full max-w-lg p-6 max-h-[85vh] overflow-y-auto">
