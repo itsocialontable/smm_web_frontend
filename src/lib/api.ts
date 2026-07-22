@@ -1131,7 +1131,10 @@ export const apiSMMCreateDesignProject = (
   token: string,
   fields: {
     clientId: string;
-    designerId: string;
+    // Design Project create karte waqt designerId optional hai — us waqt GD ko
+    // koi task assign nahi hota (future record). Sirf "Assign Task to GD" flow
+    // hi designerId bhejta hai, jisse task turant GD ke dashboard par aata hai.
+    designerId?: string;
     title: string;
     designType: string;
     deadline: string;

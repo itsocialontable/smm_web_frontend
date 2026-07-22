@@ -11858,7 +11858,22 @@ const SMMDashboard = () => {
   // aata hai, koi localStorage/fake data nahi. "Assign Task" = ek naya Design
   // Project backend par create karna, jo turant GD ke real dashboard par dikh
   // jaata hai (kyunki GD dashboard bhi isi backend se data leta hai).
-  const reviewProjects = designProjects.filter(p => p.status === "Under Review");
+  // Ek Design Project ko GD ko tab tak "assigned" nahi maana jaata jab tak
+  // usme designerId set na ho. Design Project (client details) add karne se
+  // GD ko turant koi task nahi milta — wo sirf future record hota hai.
+  // Sirf "Assign Task to GD" flow se hi designerId set hota hai aur GD ke
+  // dashboard par task dikhta hai. Isi wajah se dono lists (Design Projects
+  // tab aur GD Tasks tab) ko yahan pura alag rakha gaya hai — ek saath mix
+  // nahi hote.
+  const hasDesignerAssigned = (p: DesignProject) =>
+    !!(typeof p.designerId === "object" ? p.designerId?._id : p.designerId);
+
+  // GD Tasks tab — sirf wahi design-projects jinme designer assign ho chuka hai
+  const gdTaskProjects = designProjects.filter(hasDesignerAssigned);
+  // Design Projects tab — sirf wahi jo abhi tak kisi GD ko assign nahi hue (future record)
+  const futureDesignProjects = designProjects.filter(p => !hasDesignerAssigned(p));
+
+  const reviewProjects = gdTaskProjects.filter(p => p.status === "Under Review");
   const totalBadgeCount = (notifs.filter(n => !n.read).length) + reviewProjects.length;
   const [showAddTask, setShowAddTask]   = useState(false);
   const [newTask, setNewTask] = useState({
@@ -12492,15 +12507,21 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
     setDiscId(null);
   };
 
+  // "New Design Project" — sirf client ke project ki details save karta hai
+  // (future record ke liye). Is step par koi GD select nahi hota, isliye
+  // designerId backend ko bhejta hi nahi (apiSMMCreateDesignProject empty
+  // string fields ko FormData me include hi nahi karta) — matlab kisi bhi
+  // designer ko turant koi task assign nahi hoga. Task baad me alag se
+  // "GD Tasks" tab se "Assign Task to GD" karke diya jaata hai.
   const handleCreateDP = async (e:React.FormEvent) => {
     e.preventDefault();
-    if(!newDP.clientId||!newDP.designerId||!newDP.title||!newDP.deadline){toast.error("Please fill all required fields");return;}
+    if(!newDP.clientId||!newDP.title||!newDP.deadline){toast.error("Please fill all required fields");return;}
     setDpSaving(true);
-    const {error}=await apiSMMCreateDesignProject(token,{...newDP});
+    const {error}=await apiSMMCreateDesignProject(token,{...newDP,designerId:""});
     if(error) toast.error("Create failed: "+error);
     else{
-      toast.success("Project created!");
-      pushNotif(mkNotif("success","Project Created",`"${newDP.title}" assigned to designer`,{label:"View Projects",view:"design_projects"}));
+      toast.success("Design project added!");
+      pushNotif(mkNotif("success","Design Project Added",`"${newDP.title}" saved — assign it to a GD anytime from GD Tasks`,{label:"View Projects",view:"design_projects"}));
       setShowAddDesign(false);
       setNewDP({clientId:"",designerId:"",title:"",designType:"Social Post",deadline:"",priority:"Medium",description:"",targetAudience:"",brandColors:"",fontPreferences:"",revisionLimit:3});
       loadDesignProjects();
@@ -12588,10 +12609,10 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
   // ── Computed ─────────────────────────────────────────────────────────────────
   // GD Tasks tab ke stat cards — real design-project statuses se derive hote hain
   const taskCounts = {
-    pending:     designProjects.filter(p=>p.status==="Pending").length,
-    in_progress: designProjects.filter(p=>p.status==="In Progress").length,
-    revision:    designProjects.filter(p=>p.status==="Revision").length,
-    completed:   designProjects.filter(p=>p.status==="Completed").length,
+    pending:     gdTaskProjects.filter(p=>p.status==="Pending").length,
+    in_progress: gdTaskProjects.filter(p=>p.status==="In Progress").length,
+    revision:    gdTaskProjects.filter(p=>p.status==="Revision").length,
+    completed:   gdTaskProjects.filter(p=>p.status==="Completed").length,
   };
 
   const calDays = (() => {
@@ -13786,14 +13807,14 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
               </div>
               {designLoading?(
                 <div className="flex items-center gap-2 smm-text-muted py-8 justify-center"><Loader2 className="w-5 h-5 animate-spin"/>Loading...</div>
-              ):designProjects.length===0?(
+              ):gdTaskProjects.length===0?(
                 <Card className="smm-card p-12 text-center">
                   <FileImage className="w-12 h-12 text-slate-300 mx-auto mb-3"/>
                   <p className="smm-text-secondary">No tasks yet. Click "Assign Task to GD" to get started.</p>
                 </Card>
               ):(
                 <div className="space-y-3">
-                  {designProjects.map(p=>{
+                  {gdTaskProjects.map(p=>{
                     const pid=p._id??p.id??"";
                     const clientName=typeof p.clientId==="object"?p.clientId?.name:clientList.find(c=>c.id===p.clientId)?.name??"—";
                     const designerName=typeof p.designerId==="object"?p.designerId?.name:gdList.find(g=>g.id===p.designerId)?.name??"—";
@@ -13876,7 +13897,7 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
               </div>
               {designLoading?(
                 <div className="flex items-center gap-2 smm-text-muted py-8 justify-center"><Loader2 className="w-5 h-5 animate-spin"/>Loading...</div>
-              ):designProjects.length===0?(
+              ):futureDesignProjects.length===0?(
                 <Card className="smm-card p-12 text-center">
                   <Palette className="w-12 h-12 text-slate-300 mx-auto mb-3"/>
                   <p className="smm-text-secondary font-medium">No design projects found</p>
@@ -13886,7 +13907,7 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
                 </Card>
               ):(
                 <div className="space-y-3">
-                  {designProjects.map(p=>{
+                  {futureDesignProjects.map(p=>{
                     const pid=p._id??p.id??"";
                     const clientName=typeof p.clientId==="object"?p.clientId?.name:clientList.find(c=>c.id===p.clientId)?.name??"—";
                     const designerName=typeof p.designerId==="object"?p.designerId?.name:gdList.find(g=>g.id===p.designerId)?.name??"—";
@@ -14006,23 +14027,14 @@ const handleConnectForClient = async (platId: string, clientId: string) => {
               <button onClick={()=>setShowAddDesign(false)} className="smm-text-muted hover:smm-text-primary"><X className="w-5 h-5"/></button>
             </div>
             <form onSubmit={handleCreateDP} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="smm-text-primary">Client *</Label>
-                  <select value={newDP.clientId} onChange={e=>setNewDP(n=>({...n,clientId:e.target.value}))}
-                    className="smm-select mt-1 w-full px-3 py-2 text-sm border smm-border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" required>
-                    <option value="">-- Select Client --</option>
-                    {clientList.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <Label className="smm-text-primary">Graphic Designer *</Label>
-                  <select value={newDP.designerId} onChange={e=>setNewDP(n=>({...n,designerId:e.target.value}))}
-                    className="smm-select mt-1 w-full px-3 py-2 text-sm border smm-border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" required>
-                    <option value="">-- Select Designer --</option>
-                    {gdList.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
-                  </select>
-                </div>
+              <div>
+                <Label className="smm-text-primary">Client *</Label>
+                <select value={newDP.clientId} onChange={e=>setNewDP(n=>({...n,clientId:e.target.value}))}
+                  className="smm-select mt-1 w-full px-3 py-2 text-sm border smm-border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" required>
+                  <option value="">-- Select Client --</option>
+                  {clientList.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <p className="text-xs smm-text-muted mt-1">Ye sirf client ka project record save karega. GD ko task baad me "GD Tasks" se alag assign karna hoga.</p>
               </div>
               <div>
                 <Label className="smm-text-primary">Project Title *</Label>
