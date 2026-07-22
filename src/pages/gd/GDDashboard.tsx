@@ -14,7 +14,7 @@ import { clearSession, getSession, BASE_URL } from "@/lib/api";
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Priority = "High" | "Medium" | "Low" | "Urgent";
 type TaskStatus = "Pending" | "In Progress" | "Under Review" | "Revision" | "Completed" | "Cancelled";
-type GDView = "overview" | "tasks" | "uploads";
+type GDView = "overview" | "tasks" | "uploads" | "my_uploads";
 
 interface DesignFile {
   _id: string;
@@ -522,7 +522,7 @@ const GDDashboard = () => {
   }, [token, loadStats, loadDeadlines, loadNotifications]);
 
   useEffect(() => {
-    if (token && view === "tasks") loadTasks();
+    if (token && (view === "tasks" || view === "uploads" || view === "my_uploads")) loadTasks();
   }, [token, view, filterStatus, searchQuery, loadTasks]);
 
   useEffect(() => {
@@ -576,6 +576,7 @@ const GDDashboard = () => {
     { key: "overview", label: "Overview", icon: Layers },
     { key: "tasks", label: "All Tasks", icon: FileImage },
     { key: "uploads", label: "Uploads", icon: Upload },
+    { key: "my_uploads", label: "My Uploads", icon: Image },
   ];
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -662,10 +663,10 @@ const GDDashboard = () => {
         <header style={{ background: "white", borderBottom: "1px solid #f1f5f9", padding: "0 28px", height: 64, display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 1px 0 #f1f5f9", flexShrink: 0 }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.4px" }}>
-              {view === "overview" ? "Dashboard Overview" : view === "tasks" ? "My Design Tasks" : "Upload Center"}
+              {view === "overview" ? "Dashboard Overview" : view === "tasks" ? "My Design Tasks" : view === "uploads" ? "Upload Center" : "My Uploads"}
             </div>
             <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 1, fontWeight: 500 }}>
-              {view === "overview" ? "Your daily work summary & active tasks" : view === "tasks" ? "Tasks assigned by SMM team" : "Upload completed designs"}
+              {view === "overview" ? "Your daily work summary & active tasks" : view === "tasks" ? "Tasks assigned by SMM team" : view === "uploads" ? "Upload completed designs" : "Sab files jo aapne upload ki hain"}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1097,6 +1098,78 @@ const GDDashboard = () => {
               </div>
             </div>
           )}
+
+          {/* ═══════════════ MY UPLOADS VIEW ═══════════════ */}
+          {view === "my_uploads" && (() => {
+            const allFiles = tasks
+              .flatMap(t => (t.designFiles || []).map(f => ({ ...f, task: t })))
+              .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+            const isImage = (name: string) => /\.(png|jpe?g|gif|webp|svg)$/i.test(name);
+            const isVideo = (name: string) => /\.(mp4|mov|webm|avi|mkv)$/i.test(name);
+            return (
+              <div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
+                  <StatCard label="Total Files" value={allFiles.length} icon={Image} color="#7c3aed" bg="#f5f3ff" />
+                  <StatCard label="Drafts" value={allFiles.filter(f => f.fileType === "Draft").length} icon={FileImage} color="#2563eb" bg="#eff6ff" />
+                  <StatCard label="Final Files" value={allFiles.filter(f => f.fileType === "Final").length} icon={CheckCircle2} color="#16a34a" bg="#f0fdf4" />
+                </div>
+                <div style={{ background: "white", borderRadius: 16, border: "1px solid #f1f5f9", overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.04)" }}>
+                  <div style={{ padding: "18px 22px", borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>Uploaded Files</div>
+                      <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 1 }}>Sab tasks ki uploaded Draft/Final files, latest sabse upar</div>
+                    </div>
+                    <button onClick={loadTasks} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "white", cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: "#64748b" }}>
+                      <RefreshCw size={13} /> Refresh
+                    </button>
+                  </div>
+                  {loadingTasks ? (
+                    <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}><Loader2 size={24} className="animate-spin" /></div>
+                  ) : allFiles.length === 0 ? (
+                    <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+                      Abhi tak koi file upload nahi hui. Kisi task par jaakar "Upload File" se shuru karo.
+                    </div>
+                  ) : (
+                    <div style={{ padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14 }}>
+                      {allFiles.map(f => (
+                        <div key={f._id} style={{ borderRadius: 12, border: "1px solid #f1f5f9", overflow: "hidden", background: "white", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+                          <div style={{ height: 120, background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", borderBottom: "1px solid #f1f5f9", overflow: "hidden" }}>
+                            {isImage(f.fileName) ? (
+                              <img src={f.fileUrl} alt={f.fileName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            ) : isVideo(f.fileName) ? (
+                              <Film size={32} color="#a78bfa" />
+                            ) : (
+                              <BookImage size={32} color="#a78bfa" />
+                            )}
+                          </div>
+                          <div style={{ padding: "12px 14px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                              <span style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: f.fileType === "Final" ? "#f0fdf4" : "#fffbeb", color: f.fileType === "Final" ? "#16a34a" : "#d97706" }}>
+                                {f.fileType} · v{f.version}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.fileName}</div>
+                            <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              Task: {f.task.title}
+                            </div>
+                            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{new Date(f.uploadedAt).toLocaleString()}</div>
+                            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                              <a href={f.fileUrl} target="_blank" rel="noreferrer" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "7px", borderRadius: 8, border: "1.5px solid #e2e8f0", color: "#64748b", fontSize: 12, fontWeight: 600, textDecoration: "none" }}>
+                                <Download size={12} /> Download
+                              </a>
+                              <button onClick={() => { setView("tasks"); setSelectedTask(f.task); }} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "7px", borderRadius: 8, border: "none", background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "white", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+                                Open Task
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </main>
 
